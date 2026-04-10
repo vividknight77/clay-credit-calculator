@@ -948,14 +948,14 @@
           <!-- LEFT: Segment Tabs -->
           <div class="pb-segments-wrapper flex flex-col gap-10">
             <div class="pb-segment-section flex flex-col gap-2">
-              <div class="pb-section-header text-xs font-bold uppercase tracking-widest text-gray-500 px-4 mt-4">Enrichment Types</div>
+              <div class="pb-section-header text-xs font-bold uppercase tracking-widest text-gray-500 px-4 mt-4">Waterfall Presets</div>
+              <div class="pb-waterfall-tabs flex flex-col gap-2" id="pbWaterfallTabs"></div>
+            </div>
+            <div class="pb-segment-section flex flex-col gap-2 mt-6">
+              <div class="pb-section-header text-xs font-bold uppercase tracking-widest text-gray-500 px-4">Enrichment Types</div>
               <div class="pb-segment-tabs pb-enrichment-tabs flex flex-col gap-2" id="pbEnrichmentCategoryTabs"></div>
             </div>
             <div class="pb-segment-tabs pb-integration-tabs flex flex-col gap-2" id="pbSegmentTabs"></div>
-            <div class="pb-segment-section flex flex-col gap-2 mt-6">
-              <div class="pb-section-header text-xs font-bold uppercase tracking-widest text-gray-500 px-4">Waterfall Presets</div>
-              <div class="pb-waterfall-tabs flex flex-col gap-2" id="pbWaterfallTabs"></div>
-            </div>
           </div>
 
           <!-- CENTER: Enrichment Panel -->
@@ -4979,6 +4979,62 @@
       let rendered = 0;
       let lastCategory = null;
 
+      // Search waterfall presets FIRST (above enrichments) when there's a query
+      if (inputQuery) {
+        const matchingWaterfalls = WATERFALL_PRESETS.filter(wf =>
+          searchMatch(wf.name, inputQuery) || searchMatch(wf.segment, inputQuery)
+          || searchMatch(wf.description, inputQuery) || inputQuery.includes('waterfall')
+        );
+        if (matchingWaterfalls.length > 0) {
+          const wfHeader = document.createElement('div');
+          wfHeader.className = 'enrich-cat-heading';
+          wfHeader.style.cssText = 'border-top:none; margin-top:0;';
+          wfHeader.textContent = 'Waterfall Presets';
+          container.appendChild(wfHeader);
+
+          matchingWaterfalls.forEach(wf => {
+            const isActive = activeWaterfallIds.has(wf.id);
+            const wfItem = document.createElement('div');
+            wfItem.className = `enrichment-item ${isActive ? 'checked' : ''}`;
+            wfItem.dataset.id = wf.id;
+
+            const dotDiv = document.createElement('div');
+            dotDiv.className = 'enrich-dot';
+            dotDiv.style.cssText = 'display:flex; align-items:center; justify-content:center; overflow:hidden; background:#111; color:#fff; font-size:14px;';
+            dotDiv.textContent = wf.icon;
+
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'enrichment-info';
+            infoDiv.innerHTML = `<div class="enrichment-label">${wf.name}</div><div class="enrichment-sublabel">${wf.description}</div>`;
+
+            const stepsBadge = document.createElement('span');
+            stepsBadge.className = 'enrichment-credit';
+            stepsBadge.textContent = `${wf.providers.length} steps`;
+
+            wfItem.appendChild(dotDiv);
+            wfItem.appendChild(infoDiv);
+            wfItem.appendChild(stepsBadge);
+
+            wfItem.addEventListener('click', () => {
+              if (activeWaterfallIds.has(wf.id)) {
+                activeWaterfallIds.delete(wf.id);
+                removeWaterfallFromPipeline(wf);
+              } else {
+                activeWaterfallIds.add(wf.id);
+                addWaterfallToPipeline(wf);
+              }
+              renderWaterfallTabs();
+              pbRenderPipeline();
+              pbUpdateCredits();
+              renderAllEnrichments(inputQuery);
+            });
+
+            container.appendChild(wfItem);
+            rendered++;
+          });
+        }
+      }
+
       // Collect matching segments, then sort: exact segment name matches first
       const matchingSegments = [];
       ENRICHMENT_SEGMENTS.forEach(seg => {
@@ -5154,61 +5210,6 @@
             });
           });
         });
-      }
-
-      // Also search waterfall presets if there's a query
-      if (inputQuery) {
-        const matchingWaterfalls = WATERFALL_PRESETS.filter(wf =>
-          searchMatch(wf.name, inputQuery) || searchMatch(wf.segment, inputQuery)
-          || searchMatch(wf.description, inputQuery) || searchMatch('waterfall', inputQuery)
-        );
-        if (matchingWaterfalls.length > 0) {
-          const wfHeader = document.createElement('div');
-          wfHeader.className = 'enrich-cat-heading';
-          wfHeader.textContent = 'Waterfall Presets';
-          container.appendChild(wfHeader);
-
-          matchingWaterfalls.forEach(wf => {
-            const isActive = activeWaterfallIds.has(wf.id);
-            const wfItem = document.createElement('div');
-            wfItem.className = `enrichment-item ${isActive ? 'checked' : ''}`;
-            wfItem.dataset.id = wf.id;
-
-            const dotDiv = document.createElement('div');
-            dotDiv.className = 'enrich-dot';
-            dotDiv.style.cssText = 'display:flex; align-items:center; justify-content:center; overflow:hidden; background:#111; color:#fff; font-size:14px;';
-            dotDiv.textContent = wf.icon;
-
-            const infoDiv = document.createElement('div');
-            infoDiv.className = 'enrichment-info';
-            infoDiv.innerHTML = `<div class="enrichment-label">${wf.name}</div><div class="enrichment-sublabel">${wf.description}</div>`;
-
-            const stepsBadge = document.createElement('span');
-            stepsBadge.className = 'enrichment-credit';
-            stepsBadge.textContent = `${wf.providers.length} steps`;
-
-            wfItem.appendChild(dotDiv);
-            wfItem.appendChild(infoDiv);
-            wfItem.appendChild(stepsBadge);
-
-            wfItem.addEventListener('click', () => {
-              if (activeWaterfallIds.has(wf.id)) {
-                activeWaterfallIds.delete(wf.id);
-                removeWaterfallFromPipeline(wf);
-              } else {
-                activeWaterfallIds.add(wf.id);
-                addWaterfallToPipeline(wf);
-              }
-              renderWaterfallTabs();
-              pbRenderPipeline();
-              pbUpdateCredits();
-              renderAllEnrichments(inputQuery);
-            });
-
-            container.appendChild(wfItem);
-            rendered++;
-          });
-        }
       }
 
       // Update header with count
