@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clay Credit Cost Calculator — The Kiln</title>
+  <title>Clay Credit Cost Calculator v2 — The Kiln</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@600;700;800;900&family=Inter:wght@400;500;600;700&family=Fragment+Mono&display=swap" rel="stylesheet">
@@ -143,11 +143,11 @@
     /* ═══ PIPELINE BUILDER GRID ═══ */
     .pb-content {
       display: grid;
-      grid-template-columns: 1.2fr 2.5fr 1.5fr;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 2.5fr) minmax(0, 1.5fr);
       gap: 2.5rem;
       align-items: start;
     }
-    @media (max-width: 1280px) { .pb-content { grid-template-columns: 1fr 2fr 1.3fr; gap: 1.5rem; } }
+    @media (max-width: 1280px) { .pb-content { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1.3fr); gap: 1.5rem; } }
     @media (max-width: 800px) { .pb-content { grid-template-columns: 1fr; } }
 
     /* ═══ PIPELINE PUZZLE PIECES ═══ */
@@ -304,6 +304,21 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    /* BYOK badge — rendered inline next to vendor name for providers that
+       require the user's own API key (Apollo, ZoomInfo, Lusha, LeadIQ, Kaspr,
+       Cognism). These providers' credit cost in the library is blank because
+       Clay doesn't bill from its pool — the displayed rate is the effective
+       cost only if BYOK is NOT connected. */
+    .byok-badge {
+      display: inline-block;
+      margin-left: 0.25rem;
+      font-size: 0.7rem;
+      opacity: 0.7;
+      cursor: help;
+      user-select: none;
+      vertical-align: baseline;
+    }
+    .byok-badge:hover { opacity: 1; }
     .enrichment-sublabel {
       font-size: 0.65rem;
       color: #9ca3af;
@@ -524,10 +539,18 @@
     }
 
     /* ═══ PIPELINE VISUALIZATION ═══ */
+    .pb-pipeline-wrapper { min-width: 0; }
+    .pb-pipeline-wrapper .pb-puzzle-piece { max-width: 100%; }
+    .pb-pipeline-wrapper .pb-puzzle-label { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+    .pb-pipeline-wrapper .pb-puzzle-label > span { min-width: 0; overflow: hidden; }
+    .pb-pipeline-wrapper .pb-puzzle-label > span > span:last-child {
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; max-width: 100%;
+    }
     .pb-pipeline {
       min-height: 120px;
       max-height: 420px;
       overflow-y: auto;
+      overflow-x: hidden;
       background: #f9fafb;
       border: 1.5px dashed #d1d5db;
       border-radius: 12px;
@@ -1213,19 +1236,396 @@
 
 
   <script>
+    const WATERFALL_PRESETS = [
+      // ═══════════════════ DEFAULT VIEW (TOP 3) ═══════════════════
+      {
+        id: 'wf-work-email', name: 'Work Email Waterfall', icon: '✉️',
+        description: 'Find work emails sequentially — cheapest providers first',
+        segment: 'Work Email', group: 'Clay Waterfalls',
+        providers: ['enrow-work','icypeas-work','leadmagic-work','hunter-work','datagma-work','apollo-work','prospeo-work','findymail-work','dropcontact-work']
+      },
+      {
+        id: 'wf-mobile-phone', name: 'Phone Number Waterfall', icon: '📱',
+        description: 'Find mobile and direct-dial numbers with sequential fallback',
+        segment: 'Phone Numbers', group: 'Clay Waterfalls',
+        providers: ['leadmagic-phone','upcell-phone','findymail-phone','wiza-phone','lusha-phone','prospeo-phone','rocketreach-phone']
+      },
+      {
+        id: 'wf-find-people', name: 'Find People at Company Waterfall', icon: '🔍',
+        description: 'Find people working at a target company across providers',
+        segment: 'Find People', group: 'Clay Waterfalls',
+        providers: ['cpj-people','surfe-find','apollo-find','pubrio-find','zoominfo-find']
+      },
+
+      // ═══════════════════ PERSON-FOCUSED ═══════════════════
+      {
+        id: 'wf-personal-email', name: 'Personal Email Waterfall', icon: '📧',
+        description: 'Find personal emails across multiple sources',
+        segment: 'Personal Email', group: 'Clay Waterfalls',
+        providers: ['modash-personal','mixrank-personal','wiza-personal','lusha-personal','limadata-personal','forager-personal','contactout-personal']
+      },
+      {
+        id: 'wf-email-validation', name: 'Email Validation Waterfall', icon: '✅',
+        description: 'Validate emails through multiple verification services',
+        segment: 'Email Validation', group: 'Clay Waterfalls',
+        providers: ['debounce-val','enrow-val','icypeas-val','leadmagic-val','findymail-val','zerobounce-val','hunter-val']
+      },
+      {
+        id: 'wf-linkedin', name: 'LinkedIn Profile Waterfall', icon: '👥',
+        description: 'Find LinkedIn profiles from name + company',
+        segment: 'LinkedIn / Profiles', group: 'Clay Waterfalls',
+        providers: ['icypeas-li','wiza-li','livedata-li','bytemine-li','aviato-li','contactout-li']
+      },
+      {
+        id: 'wf-person-enrich', name: 'Person Enrichment Waterfall', icon: '👤',
+        description: 'Enrich person data across multiple providers',
+        segment: 'Enrich Person', group: 'Clay Waterfalls',
+        providers: ['cpj-person','datagma-person','apollo-person','dropcontact-per','snov-person','rocketreach-per','pdl-person']
+      },
+
+      // ═══════════════════ COMPANY-FOCUSED (FROM SCREENSHOTS) ═══════════════════
+      {
+        id: 'wf-company-enrich', name: 'Company Enrichment Waterfall', icon: '🏛️',
+        description: 'Enrich company data with firmographics',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        providers: ['cpj-company','google-domain','datagma-co','leadmagic-co','apollo-co','pdl-co','clearbit-co']
+      },
+      {
+        id: 'wf-domain', name: 'Company Domain Waterfall', icon: '🌐',
+        description: 'Find a company domain from its name',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Snov.io', cost:1, segment:'Enrich Company' },
+          { vendor:'Google', cost:1, segment:'Enrich Company' },
+          { vendor:'Clearbit', cost:8, segment:'Enrich Company' },
+          { vendor:'HG Insights', cost:2, segment:'Enrich Company' }
+        ]
+      },
+      {
+        id: 'wf-address', name: 'Company Address Waterfall', icon: '📍',
+        description: 'Find a company HQ address',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Companies, People, Jobs', cost:1, segment:'Enrich Company' },
+          { vendor:'Crunchbase', cost:5, segment:'Enrich Company' },
+          { vendor:'Datagma', cost:2, segment:'Enrich Company' },
+          { vendor:'Google', cost:1, segment:'Enrich Company' },
+          { vendor:'People Data Labs', cost:5, segment:'Enrich Company' },
+          { vendor:'SMARTe', cost:9, segment:'Enrich Company' },
+          { vendor:'Beauhurst', cost:10, segment:'Enrich Company' }
+        ]
+      },
+      {
+        id: 'wf-country', name: 'Company Country Waterfall', icon: '🌍',
+        description: 'Find company HQ country',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Companies, People, Jobs', cost:1, segment:'Enrich Company' },
+          { vendor:'HG Insights', cost:4, segment:'Enrich Company' },
+          { vendor:'SMARTe', cost:9, segment:'Enrich Company' },
+          { vendor:'Owler', cost:10, segment:'Enrich Company' },
+          { vendor:'Clearbit', cost:8, segment:'Enrich Company' },
+          { vendor:'Beauhurst', cost:10, segment:'Enrich Company' }
+        ]
+      },
+      {
+        id: 'wf-description', name: 'Company Description Waterfall', icon: '📝',
+        description: 'Find company description',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Companies, People, Jobs', cost:1, segment:'Enrich Company' },
+          { vendor:'Crunchbase', cost:5, segment:'Enrich Company' },
+          { vendor:'Clearbit', cost:8, segment:'Enrich Company' },
+          { vendor:'Owler', cost:10, segment:'Enrich Company' },
+          { vendor:'Store Leads', cost:1, segment:'Enrich Company' },
+          { vendor:'Capterra', cost:3, segment:'Enrich Company' },
+          { vendor:'Brandfetch', cost:3, segment:'Enrich Company' }
+        ]
+      },
+      {
+        id: 'wf-industry', name: 'Company Industry Waterfall', icon: '🏷️',
+        description: 'Find company industry',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Companies, People, Jobs', cost:1, segment:'Enrich Company' },
+          { vendor:'HG Insights', cost:4, segment:'Enrich Company' },
+          { vendor:'People Data Labs', cost:5, segment:'Enrich Company' },
+          { vendor:'Clearbit', cost:8, segment:'Enrich Company' },
+          { vendor:'Owler', cost:10, segment:'Enrich Company' },
+          { vendor:'LeadMagic', cost:1, segment:'Enrich Company' },
+          { vendor:'SMARTe', cost:9, segment:'Enrich Company' },
+          { vendor:'Brandfetch', cost:3, segment:'Enrich Company' },
+          { vendor:'CB Insights', cost:3, segment:'Enrich Company' }
+        ]
+      },
+      {
+        id: 'wf-logo', name: 'Company Logo Waterfall', icon: '🖼️',
+        description: 'Find company logo',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Companies, People, Jobs', cost:1, segment:'Enrich Company' },
+          { vendor:'LeadMagic', cost:1, segment:'Enrich Company' },
+          { vendor:'Brandfetch', cost:3, segment:'Enrich Company' },
+          { vendor:'Owler', cost:10, segment:'Enrich Company' }
+        ]
+      },
+      {
+        id: 'wf-founded', name: 'Company Founded Date Waterfall', icon: '🎂',
+        description: 'Find year a company was founded',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Companies, People, Jobs', cost:1, segment:'Enrich Company' },
+          { vendor:'LeadMagic', cost:1, segment:'Enrich Company' },
+          { vendor:'Clearbit', cost:8, segment:'Enrich Company' },
+          { vendor:'Owler', cost:10, segment:'Enrich Company' }
+        ]
+      },
+      {
+        id: 'wf-crunchbase-handle', name: 'Crunchbase Handle Waterfall', icon: '🔗',
+        description: 'Find a Crunchbase URL for a company',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Clearbit', cost:8, segment:'Enrich Company' },
+          { vendor:'Datagma', cost:2, segment:'Enrich Company' },
+          { vendor:'Crunchbase', cost:5, segment:'Enrich Company' }
+        ]
+      },
+      {
+        id: 'wf-org-structure', name: 'Company Org Structure Waterfall', icon: '🏛️',
+        description: 'Find company org structure / parent',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'HG Insights', cost:4, segment:'Enrich Company' },
+          { vendor:'CB Insights', cost:6, segment:'Enrich Company' },
+          { vendor:'Beauhurst', cost:8, segment:'Enrich Company' }
+        ]
+      },
+      {
+        id: 'wf-competitors', name: 'Company Competitors Waterfall', icon: '⚔️',
+        description: 'Find company competitors',
+        segment: 'Enrich Company', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Semrush', cost:2, segment:'Enrich Company' },
+          { vendor:'LeadMagic', cost:7, segment:'Enrich Company' },
+          { vendor:'Capterra', cost:3, segment:'Enrich Company' },
+          { vendor:'CB Insights', cost:12, segment:'Enrich Company' },
+          { vendor:'Explorium', cost:4, segment:'Enrich Company' },
+          { vendor:'Artificial Intelligence', cost:3, segment:'Enrich Company' }
+        ]
+      },
+
+      // ═══════════════════ HEADCOUNT ═══════════════════
+      {
+        id: 'wf-employee-count', name: 'Employee Count Waterfall', icon: '👥',
+        description: 'Find company headcount',
+        segment: 'Headcount & Org', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Companies, People, Jobs', cost:1, segment:'Headcount & Org' },
+          { vendor:'HG Insights', cost:4, segment:'Headcount & Org' },
+          { vendor:'People Data Labs', cost:5, segment:'Headcount & Org' },
+          { vendor:'Clearbit', cost:8, segment:'Headcount & Org' },
+          { vendor:'SMARTe', cost:9, segment:'Headcount & Org' },
+          { vendor:'Owler', cost:10, segment:'Headcount & Org' }
+        ]
+      },
+
+      // ═══════════════════ FUNDING & REVENUE ═══════════════════
+      {
+        id: 'wf-funding-stage', name: 'Funding Stage Waterfall', icon: '📈',
+        description: 'Find company funding stage',
+        segment: 'Funding & Investors', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Intellizence', cost:3, segment:'Funding & Investors' },
+          { vendor:'Crunchbase', cost:10, segment:'Funding & Investors' },
+          { vendor:'Harmonic.ai', cost:4, segment:'Funding & Investors' },
+          { vendor:'dealroom.co', cost:4, segment:'Funding & Investors' },
+          { vendor:'People Data Labs', cost:5, segment:'Funding & Investors' },
+          { vendor:'CB Insights', cost:8, segment:'Funding & Investors' }
+        ]
+      },
+      {
+        id: 'wf-latest-funding', name: 'Latest Funding Waterfall', icon: '🎯',
+        description: 'Find latest funding round',
+        segment: 'Funding & Investors', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Intellizence', cost:3, segment:'Funding & Investors' },
+          { vendor:'dealroom.co', cost:4, segment:'Funding & Investors' },
+          { vendor:'Crunchbase', cost:10, segment:'Funding & Investors' },
+          { vendor:'Artificial Intelligence', cost:3, segment:'Funding & Investors' },
+          { vendor:'CB Insights', cost:12, segment:'Funding & Investors' }
+        ]
+      },
+      {
+        id: 'wf-total-funding', name: 'Total Funding Waterfall', icon: '💎',
+        description: 'Find total funding raised',
+        segment: 'Funding & Investors', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Harmonic.ai', cost:4, segment:'Funding & Investors' },
+          { vendor:'dealroom.co', cost:4, segment:'Funding & Investors' },
+          { vendor:'Crunchbase', cost:15, segment:'Funding & Investors' },
+          { vendor:'People Data Labs', cost:5, segment:'Funding & Investors' },
+          { vendor:'Aviato', cost:24, segment:'Funding & Investors' },
+          { vendor:'Beauhurst', cost:16, segment:'Funding & Investors' },
+          { vendor:'CB Insights', cost:8, segment:'Funding & Investors' }
+        ]
+      },
+      {
+        id: 'wf-investors', name: 'Investors Waterfall', icon: '💵',
+        description: 'Find company investors',
+        segment: 'Funding & Investors', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Crunchbase', cost:10, segment:'Funding & Investors' },
+          { vendor:'dealroom.co', cost:4, segment:'Funding & Investors' },
+          { vendor:'Intellizence', cost:3, segment:'Funding & Investors' },
+          { vendor:'Owler', cost:10, segment:'Funding & Investors' }
+        ]
+      },
+      {
+        id: 'wf-acquisitions', name: 'Acquisitions Waterfall', icon: '🤝',
+        description: 'Find company acquisitions',
+        segment: 'Funding & Investors', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Crunchbase', cost:10, segment:'Funding & Investors' },
+          { vendor:'Owler', cost:10, segment:'Funding & Investors' }
+        ]
+      },
+      {
+        id: 'wf-valuation', name: 'Valuation Waterfall', icon: '💎',
+        description: 'Find company valuation',
+        segment: 'Funding & Investors', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Crunchbase', cost:15, segment:'Funding & Investors' },
+          { vendor:'dealroom.co', cost:4, segment:'Funding & Investors' },
+          { vendor:'Aviato', cost:24, segment:'Funding & Investors' },
+          { vendor:'CB Insights', cost:12, segment:'Funding & Investors' },
+          { vendor:'Beauhurst', cost:16, segment:'Funding & Investors' }
+        ]
+      },
+      {
+        id: 'wf-revenue', name: 'Revenue Waterfall', icon: '💰',
+        description: 'Find company revenue',
+        segment: 'Revenue & Growth', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'HG Insights', cost:4, segment:'Revenue & Growth' },
+          { vendor:'Pubrio', cost:4, segment:'Revenue & Growth' },
+          { vendor:'RocketReach', cost:8, segment:'Revenue & Growth' },
+          { vendor:'Owler', cost:10, segment:'Revenue & Growth' },
+          { vendor:'CB Insights', cost:6, segment:'Revenue & Growth' }
+        ]
+      },
+      {
+        id: 'wf-revenue-range', name: 'Revenue Range Waterfall', icon: '💹',
+        description: 'Find company revenue range',
+        segment: 'Revenue & Growth', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'HG Insights', cost:4, segment:'Revenue & Growth' },
+          { vendor:'SMARTe', cost:9, segment:'Revenue & Growth' },
+          { vendor:'Crunchbase', cost:15, segment:'Revenue & Growth' },
+          { vendor:'Clearbit', cost:8, segment:'Revenue & Growth' },
+          { vendor:'CB Insights', cost:6, segment:'Revenue & Growth' }
+        ]
+      },
+
+      // ═══════════════════ JOBS & NEWS ═══════════════════
+      {
+        id: 'wf-jobs', name: 'Job Openings Waterfall', icon: '💼',
+        description: 'Find company job openings',
+        segment: 'Job Openings', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Companies, People, Jobs', cost:1, segment:'Job Openings' },
+          { vendor:'PredictLeads', cost:1, segment:'Job Openings' },
+          { vendor:'TheirStack', cost:0.2, segment:'Job Openings' },
+          { vendor:'Pubrio', cost:6, segment:'Job Openings' }
+        ]
+      },
+      {
+        id: 'wf-news', name: 'Company News Waterfall', icon: '📰',
+        description: 'Find latest company news',
+        segment: 'News & Events', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'PredictLeads', cost:1, segment:'News & Events' },
+          { vendor:'Intellizence', cost:6, segment:'News & Events' },
+          { vendor:'Google News', cost:1, segment:'News & Events' }
+        ]
+      },
+
+      // ═══════════════════ TECH STACK (NEW) ═══════════════════
+      {
+        id: 'wf-tech-stack', name: 'Tech Stack Waterfall', icon: '🛠️',
+        description: 'Detect technologies a company uses',
+        segment: 'Tech Stack', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'BuiltWith', cost:4, segment:'Tech Stack' },
+          { vendor:'HG Insights', cost:4, segment:'Tech Stack' },
+          { vendor:'Datagma', cost:2, segment:'Tech Stack' },
+          { vendor:'People Data Labs', cost:5, segment:'Tech Stack' },
+          { vendor:'Clearbit', cost:8, segment:'Tech Stack' },
+          { vendor:'Wappalyzer', cost:2, segment:'Tech Stack' }
+        ]
+      },
+
+      // ═══════════════════ SOCIAL PROFILES ═══════════════════
+      {
+        id: 'wf-facebook', name: 'Company Facebook Waterfall', icon: '👍',
+        description: 'Find company Facebook page',
+        segment: 'Social Profiles', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Owler', cost:10, segment:'Social Profiles' },
+          { vendor:'Clearbit', cost:8, segment:'Social Profiles' },
+          { vendor:'People Data Labs', cost:5, segment:'Social Profiles' },
+          { vendor:'Datagma', cost:2, segment:'Social Profiles' }
+        ]
+      },
+      {
+        id: 'wf-twitter', name: 'Company Twitter/X Waterfall', icon: '🐦',
+        description: 'Find company Twitter/X account',
+        segment: 'Social Profiles', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'People Data Labs', cost:5, segment:'Social Profiles' },
+          { vendor:'Datagma', cost:2, segment:'Social Profiles' },
+          { vendor:'Clearbit', cost:8, segment:'Social Profiles' },
+          { vendor:'Owler', cost:10, segment:'Social Profiles' }
+        ]
+      },
+      {
+        id: 'wf-instagram', name: 'Company Instagram Waterfall', icon: '📸',
+        description: 'Find company Instagram handle',
+        segment: 'Social Profiles', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Instagram', cost:1, segment:'Social Profiles' }
+        ]
+      },
+      {
+        id: 'wf-github', name: 'Company GitHub Waterfall', icon: '🐙',
+        description: 'Find a company GitHub profile',
+        segment: 'Social Profiles', group: 'Clay Waterfalls',
+        steps: [
+          { vendor:'Google', cost:1, segment:'Social Profiles' }
+        ]
+      },
+
+      // ═══════════════════ TRAFFIC ═══════════════════
+      {
+        id: 'wf-web-traffic', name: 'Web Traffic & Visitor ID Waterfall', icon: '🌐',
+        description: 'Identify website visitors and company traffic',
+        segment: 'Web Traffic & Visitors', group: 'Clay Waterfalls',
+        providers: ['snitcher-traffic','dealfront-traffic','demandbase-traffic','rb2b-traffic','warmly-traffic']
+      }
+    ];
+
     // ============================================================================
     // PLAN DATA
     // ============================================================================
     const PLAN_TIERS = {
       // ── LEGACY PLANS ─────────────────────────────────────────────────
       free: {
-        name: 'Free', planMode: 'legacy', topUpMultiplier: 1.5,
+        name: 'Free', planMode: 'legacy', topUpMultiplier: 1.3,
         tiers: [
           { label: '100 cr/mo (Free)', credits: 100, monthly: 0, perCredit: 0.050 }
         ]
       },
       starter: {
-        name: 'Starter', planMode: 'legacy', topUpMultiplier: 1.5,
+        name: 'Starter', planMode: 'legacy', topUpMultiplier: 1.3,
         tiers: [
           { label: '2,000 cr/mo  — $134/mo',  credits: 2000,  monthly: 134,  perCredit: 0.0335 },
           { label: '5,000 cr/mo  — $249/mo',  credits: 5000,  monthly: 249,  perCredit: 0.0249 },
@@ -1233,7 +1633,7 @@
         ]
       },
       explorer: {
-        name: 'Explorer', planMode: 'legacy', topUpMultiplier: 1.5,
+        name: 'Explorer', planMode: 'legacy', topUpMultiplier: 1.3,
         tiers: [
           { label: '10,000 cr/mo  — $314/mo',  credits: 10000,  monthly: 314,  perCredit: 0.0209 },
           { label: '25,000 cr/mo  — $590/mo',  credits: 25000,  monthly: 590,  perCredit: 0.0157 },
@@ -1241,7 +1641,7 @@
         ]
       },
       pro: {
-        name: 'Pro', planMode: 'legacy', topUpMultiplier: 1.5,
+        name: 'Pro', planMode: 'legacy', topUpMultiplier: 1.3,
         tiers: [
           { label: '50,000 cr/mo  — $720/mo',   credits: 50000,  monthly: 720,  perCredit: 0.0096 },
           { label: '100,000 cr/mo — $1,140/mo', credits: 100000, monthly: 1140, perCredit: 0.0076 },
@@ -1686,8 +2086,29 @@
 
     // After init, default to waterfall view (set in init block below)
 
-    const ENRICHMENT_CATEGORIES = ['People Data', 'Company Data', 'Web Scraping & Intelligence', 'AI & Automation'];
+    const ENRICHMENT_CATEGORIES = ['Clay Waterfalls', 'People Data', 'Company Data', 'Signals', 'Web Scraping & Intelligence', 'AI & Automation'];
     const INTEGRATION_SEGMENTS = ['CRM Sync', 'Outreach Tools', 'Exports & Sync'];
+
+    // ─── BYOK-only providers ─────────────────────────────────────────────────
+    // These providers require the user to connect their own API key/account;
+    // Clay passes the call through and bills the user's external plan, not
+    // Clay credits. Rate shown in the calculator is the effective cost when
+    // BYOK is NOT connected (some of these don't have a non-BYOK path at all).
+    // Derived from clay-library-pricing.csv (pure-blank-basic rule) + Clay's
+    // published integration docs for providers the CSV hasn't catalogued yet.
+    const BYOK_VENDORS = new Set([
+      'Apollo.io',
+      'ZoomInfo',
+      'LeadIQ',
+      'Lusha',
+      'Kaspr',
+      'Cognism',
+      'Swordfish'
+    ]);
+    function byokBadge(vendor) {
+      if (!BYOK_VENDORS.has(vendor)) return '';
+      return ` <span class="byok-badge" title="BYOK — requires your own ${vendor} account/API key. Credit cost shown is Clay's effective charge; your ${vendor} plan is billed separately.">🔑</span>`;
+    }
 
     // ============================================================================
     // ENRICHMENT SEGMENTS — Primary Blocks → Secondary Segments
@@ -1758,7 +2179,7 @@
         hitRate: { low: 0.85, high: 0.95 },
         providers: [
           { id: 'zerobounce-val',    vendor: 'ZeroBounce',  label: 'Validate Email',           legacy_cr: 1,    new_cr: 0.1  },
-          { id: 'findymail-val',     vendor: 'Findymail',   label: 'Validate Email',           legacy_cr: 1,    new_cr: 0.05 },
+          { id: 'findymail-val',     vendor: 'Findymail',   label: 'Validate Email',           legacy_cr: 1,    new_cr: 0.1  },
           { id: 'hunter-val',        vendor: 'Hunter',      label: 'Verify Email',             legacy_cr: 1,    new_cr: 0.2  },
           { id: 'enrichley-val',     vendor: 'Enrichley',   label: 'Verify Email',             legacy_cr: 1,    new_cr: 0.1  },
           { id: 'debounce-val',      vendor: 'Debounce',    label: 'Verify Emails',            legacy_cr: 0,    new_cr: 0    },
@@ -1771,7 +2192,7 @@
         category: 'People Data', segment: 'Phone Validation', catColor: '#016A59',
         hitRate: { low: 0.40, high: 0.70 },
         providers: [
-          { id: 'trestle-val',       vendor: 'Trestle',     label: 'Validate Phone',           legacy_cr: 3,    new_cr: 0.5  },
+          { id: 'trestle-val',       vendor: 'Trestle',     label: 'Validate Phone',           legacy_cr: 0.2,  new_cr: 0.2  },
           { id: 'clearout-val',      vendor: 'Clearout',    label: 'Validate Phone',           legacy_cr: 0,    new_cr: 0    },
         ]
       },
@@ -1791,7 +2212,7 @@
         category: 'People Data', segment: 'Enrich Person', catColor: '#016A59',
         hitRate: { low: 0.55, high: 0.80 },
         providers: [
-          { id: 'cpj-person',       vendor: 'Clay (CPJ)',       label: 'Enrich Person',              legacy_cr: 1,   new_cr: 0.5  },
+          { id: 'cpj-person',       vendor: 'Clay (CPJ)',       label: 'Enrich Person',              legacy_cr: 1,   new_cr: 1    },
           { id: 'dropcontact-per',  vendor: 'DropContact',      label: 'Enrich Person',              legacy_cr: 2,   new_cr: 1    },
           { id: 'pdl-person',       vendor: 'People Data Labs', label: 'Enrich Person',              legacy_cr: 5,   new_cr: 3    },
           { id: 'clearbit-person',  vendor: 'Clearbit',         label: 'Enrich Person & Company',    legacy_cr: 8,   new_cr: 4    },
@@ -1809,7 +2230,7 @@
         hitRate: { low: 0.50, high: 0.75 },
         providers: [
           { id: 'cpj-people',    vendor: 'Clay (CPJ)',  label: 'Find Lists of People',      legacy_cr: 0,  new_cr: 0, actionCost: 0 },
-          { id: 'surfe-find',    vendor: 'Surfe',       label: 'Find People at Company',     legacy_cr: 3,  new_cr: 0.1 },
+          { id: 'surfe-find',    vendor: 'Surfe',       label: 'Find People at Company',     legacy_cr: 0.1, new_cr: 0.1 },
           { id: 'pubrio-find',   vendor: 'Pubrio',      label: 'Find People at Company',     legacy_cr: 6,  new_cr: 3   },
           { id: 'apollo-find',   vendor: 'Apollo.io',   label: 'Find People by Criteria',    legacy_cr: 2,  new_cr: 0.5 },
           { id: 'zoominfo-find', vendor: 'ZoomInfo',    label: 'Find People at Company',     legacy_cr: 8,  new_cr: 4   },
@@ -1841,7 +2262,7 @@
         hitRate: { low: 0.55, high: 0.80 },
         providers: [
           { id: 'cpj-company-find',  vendor: 'Clay (CPJ)',   label: 'Find Company from Name',       legacy_cr: 0,   new_cr: 0, actionCost: 0 },
-          { id: 'google-domain',     vendor: 'Google',        label: 'Find Company Domain',          legacy_cr: 0,   new_cr: 0, actionCost: 0 },
+          { id: 'google-domain',     vendor: 'Google',        label: 'Find Company Domain',          legacy_cr: 1,   new_cr: 0.2, actionCost: 0 },
           { id: 'dropcontact-find',  vendor: 'DropContact',   label: 'Find Company Name',            legacy_cr: 2,   new_cr: 1    },
           { id: 'ocean-find',        vendor: 'Ocean.io',      label: 'Find Similar Companies',       legacy_cr: 5,   new_cr: 3    },
           { id: 'openmart-find',     vendor: 'Openmart',      label: 'Find Local Businesses',        legacy_cr: 1,   new_cr: 0.5  },
@@ -1853,7 +2274,7 @@
         category: 'Company Data', segment: 'Enrich Company', catColor: '#B45309',
         hitRate: { low: 0.65, high: 0.90 },
         providers: [
-          { id: 'cpj-company',       vendor: 'Clay (CPJ)',        label: 'Enrich Company',           legacy_cr: 1,   new_cr: 0.5  },
+          { id: 'cpj-company',       vendor: 'Clay (CPJ)',        label: 'Enrich Company',           legacy_cr: 1,   new_cr: 1    },
           { id: 'hginsights-co',     vendor: 'HG Insights',      label: 'Enrich Company',           legacy_cr: 4,   new_cr: 2    },
           { id: 'clearbit-co',       vendor: 'Clearbit',          label: 'Enrich Company',           legacy_cr: 8,   new_cr: 3    },
           { id: 'smarte-co',         vendor: 'SMARTe',            label: 'Enrich Company',           legacy_cr: 9,   new_cr: 6    },
@@ -1863,7 +2284,7 @@
           { id: 'owler-co',          vendor: 'Owler',             label: 'Enrich Company',           legacy_cr: 10,  new_cr: 3    },
           { id: 'leadmagic-co',      vendor: 'LeadMagic',         label: 'Enrich Company',           legacy_cr: 1,   new_cr: 0.5  },
           { id: 'datagma-co',        vendor: 'Datagma',           label: 'Enrich Company',           legacy_cr: 2,   new_cr: 0.4  },
-          { id: 'surfe-co',          vendor: 'Surfe',             label: 'Enrich Company',           legacy_cr: 6,   new_cr: 4    },
+          { id: 'surfe-co',          vendor: 'Surfe',             label: 'Enrich Company',           legacy_cr: 5,   new_cr: 4    },
           { id: 'apollo-co',         vendor: 'Apollo.io',         label: 'Enrich Company',           legacy_cr: 2,   new_cr: 0.5  },
           { id: 'zoominfo-co',       vendor: 'ZoomInfo',          label: 'Enrich Company',           legacy_cr: 8,   new_cr: 4    },
         ]
@@ -1883,7 +2304,7 @@
         providers: [
           { id: 'crunchbase-fund',  vendor: 'Crunchbase',   label: 'Latest Funding Round',     legacy_cr: 10, new_cr: 8 },
           { id: 'harmonic-fund',    vendor: 'Harmonic.ai',  label: 'Startup Funding Data',     legacy_cr: 5,  new_cr: 3 },
-          { id: 'dealroom-fund',    vendor: 'Dealroom',     label: 'Fundraising Data',         legacy_cr: 5,  new_cr: 3 },
+          { id: 'dealroom-fund',    vendor: 'Dealroom',     label: 'Fundraising Data',         legacy_cr: 4,  new_cr: 4 },
           { id: 'pitchbook-fund',   vendor: 'PitchBook',    label: 'Company Funding Data',     legacy_cr: 8,  new_cr: 5 },
           { id: 'cbinsights-fund',  vendor: 'CB Insights',  label: 'Funding & Valuations',     legacy_cr: 6,  new_cr: 3 },
         ]
@@ -1928,8 +2349,19 @@
           { id: 'demandbase-traffic',  vendor: 'Demandbase',  label: 'IP to Company Data',          legacy_cr: 3,   new_cr: 1.5  },
           { id: 'rb2b-traffic',        vendor: 'RB2B',        label: 'Identify Website Visitors',   legacy_cr: 5,   new_cr: 3    },
           { id: 'warmly-traffic',      vendor: 'Warmly',      label: 'De-anonymize Website Traffic', legacy_cr: 5,  new_cr: 3    },
-          { id: 'semrush-traffic',     vendor: 'Semrush',     label: 'Domain Traffic Analytics',     legacy_cr: 5,  new_cr: 2.5  },
+          { id: 'semrush-traffic',     vendor: 'Semrush',     label: 'Domain Traffic Analytics',     legacy_cr: 2,  new_cr: 2    },
           { id: 'similarweb-traffic',  vendor: 'Similarweb',  label: 'Website Engagement Metrics',   legacy_cr: 5,  new_cr: 2.5  },
+        ]
+      },
+            {
+        category: 'Signals', segment: 'Clay Signals', catColor: '#0369A1',
+        hitRate: { low: 0.40, high: 0.80 },
+        providers: [
+          { id: 'signal-job-change',    vendor: 'Job Change',        label: 'Track when contacts move to new companies',        legacy_cr: 1, new_cr: 1 },
+          { id: 'signal-promotion',     vendor: 'Promotion',         label: 'Detect promotions at current company',              legacy_cr: 1, new_cr: 1 },
+          { id: 'signal-job-posting',   vendor: 'Job Posting',       label: 'Monitor target companies for open roles',           legacy_cr: 1, new_cr: 1 },
+          { id: 'signal-new-hire',      vendor: 'New Hire',          label: 'Track new hires at target accounts (last 90 days)', legacy_cr: 1, new_cr: 1 },
+          { id: 'signal-news-funding',  vendor: 'News & Fundraising',label: 'Alerts on news and funding events',                  legacy_cr: 1, new_cr: 1 },
         ]
       },
       {
@@ -1979,90 +2411,110 @@
       // PRIMARY BLOCK: AI & AUTOMATION
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       {
-        category: 'AI & Automation', segment: 'Clay Native AI', catColor: '#7c3aed',
-        hitRate: { low: 0.80, high: 0.95 },
-        providers: [
-          { id: 'clay-neon-enr',      vendor: 'Clay',  label: 'AI Classification (Neon)',         legacy_cr: 2,  new_cr: 1   },
-          { id: 'clay-helium-enr',    vendor: 'Clay',  label: 'AI Light Reasoning (Helium)',    legacy_cr: 3,  new_cr: 1.5 },
-          { id: 'clay-argon-enr',     vendor: 'Clay',  label: 'AI Heavy Reasoning (Argon)',     legacy_cr: 10, new_cr: 5   },
-          { id: 'clay-navigator-enr', vendor: 'Clay',  label: 'AI Browser Agent (Navigator)',   legacy_cr: 25, new_cr: 12  },
-        ]
-      },
-      {
-        category: 'AI & Automation', segment: 'Third-Party AI', catColor: '#7c3aed',
-        hitRate: { low: 0.80, high: 0.95 },
-        providers: [
-          { id: 'gpt4o-enr',         vendor: 'OpenAI',    label: 'ChatGPT-4o',           legacy_cr: 1.5, new_cr: 0.8 },
-          { id: 'gpt4o-mini-enr',    vendor: 'OpenAI',    label: 'ChatGPT-4o Mini',      legacy_cr: 0.5, new_cr: 0.3 },
-          { id: 'claude-sonnet-enr', vendor: 'Anthropic',  label: 'Claude 3.5 Sonnet',    legacy_cr: 1.5, new_cr: 0.8 },
-          { id: 'claude-haiku-enr',  vendor: 'Anthropic',  label: 'Claude 3 Haiku',       legacy_cr: 0.3, new_cr: 0.2 },
-          { id: 'gemini-enr',        vendor: 'Google',     label: 'Gemini Pro',           legacy_cr: 1,   new_cr: 0.5 },
-        ]
-      },
-      {
         category: 'AI & Automation', segment: 'Web Research', catColor: '#7c3aed',
-        hitRate: { low: 0.60, high: 0.85 },
+        hitRate: { low: 0.75, high: 0.95 },
         providers: [
-          { id: 'claygent-enr',      vendor: 'Clay',  label: 'Claygent (Web Research)',  legacy_cr: 15, new_cr: 8   },
-          { id: 'web-scraper-enr',   vendor: 'Clay',  label: 'Web Scraping Assistant',   legacy_cr: 5,  new_cr: 2.5 },
-          { id: 'news-research-enr', vendor: 'Clay',  label: 'News & Press Research',    legacy_cr: 8,  new_cr: 4   },
+          { id: 'cg-helium',           vendor: 'Clay',      label: 'Helium — best price/perf, outperforms Haiku & GPT-4o-Mini', legacy_cr: 1,   new_cr: 1   },
+          { id: 'cg-neon',             vendor: 'Clay',      label: 'Neon — complex tasks at reasonable price, outperforms Sonnet 3.5', legacy_cr: 2,   new_cr: 2   },
+          { id: 'cg-argon',            vendor: 'Clay',      label: 'Argon (Recommended) — strongest Clay model, outperforms Opus & GPT-4o', legacy_cr: 3,   new_cr: 3   },
+          { id: 'cg-navigator',        vendor: 'Clay',      label: 'Clay Navigator — autonomous web researcher',                legacy_cr: 6,   new_cr: 6   },
+          { id: 'cg-gpt-5-4',          vendor: 'OpenAI',    label: 'GPT-5.4 — improved reasoning & coding',                     legacy_cr: 2.8, new_cr: 2.8 },
+          { id: 'cg-gpt-5-4-mini',     vendor: 'OpenAI',    label: 'GPT-5.4 Mini — faster, cost-efficient',                     legacy_cr: 2.5, new_cr: 2.5 },
+          { id: 'cg-gpt-5-4-nano',     vendor: 'OpenAI',    label: 'GPT-5.4 Nano — fastest, most cost-efficient',               legacy_cr: 1,   new_cr: 1   },
+          { id: 'cg-gpt-5-1',          vendor: 'OpenAI',    label: 'GPT-5.1 — coding & agentic tasks',                          legacy_cr: 0.8, new_cr: 0.8 },
+          { id: 'cg-gpt-5',            vendor: 'OpenAI',    label: 'GPT-5 — general-purpose',                                   legacy_cr: 1,   new_cr: 1   },
+          { id: 'cg-gpt-5-mini',       vendor: 'OpenAI',    label: 'GPT-5 Mini — faster, cost-efficient',                       legacy_cr: 1,   new_cr: 1   },
+          { id: 'cg-gpt-5-nano',       vendor: 'OpenAI',    label: 'GPT-5 Nano — fastest version',                              legacy_cr: 0.5, new_cr: 0.5 },
+          { id: 'cg-o4-mini',          vendor: 'OpenAI',    label: 'o4 Mini — fast reasoning model',                            legacy_cr: 2,   new_cr: 2   },
+          { id: 'cg-o3',               vendor: 'OpenAI',    label: 'o3 — complex reasoning',                                    legacy_cr: 4,   new_cr: 4   },
+          { id: 'cg-gpt-4-1',          vendor: 'OpenAI',    label: 'GPT-4.1 — smartest non-reasoning model',                    legacy_cr: 6.8, new_cr: 6.8 },
+          { id: 'cg-gpt-4-1-mini',     vendor: 'OpenAI',    label: 'GPT-4.1 Mini — smaller, faster',                            legacy_cr: 1,   new_cr: 1   },
+          { id: 'cg-gpt-4-1-nano',     vendor: 'OpenAI',    label: 'GPT-4.1 Nano — fastest version',                            legacy_cr: 0.5, new_cr: 0.5 },
+          { id: 'cg-gpt-4o',           vendor: 'OpenAI',    label: 'GPT-4o — fast, intelligent, flexible',                      legacy_cr: 2,   new_cr: 2   },
+          { id: 'cg-gpt-4o-mini',      vendor: 'OpenAI',    label: 'GPT-4o Mini — fast, affordable',                            legacy_cr: 1,   new_cr: 1   },
+          { id: 'cg-claude-4-6-opus',  vendor: 'Anthropic', label: 'Claude 4.6 Opus — most intelligent, agents & coding',       legacy_cr: 7,   new_cr: 7   },
+          { id: 'cg-claude-4-5-opus',  vendor: 'Anthropic', label: 'Claude 4.5 Opus — powerful & intelligent',                  legacy_cr: 7,   new_cr: 7   },
+          { id: 'cg-claude-4-6-sonnet',vendor: 'Anthropic', label: 'Claude 4.6 Sonnet — improved reasoning & coding',           legacy_cr: 4.2, new_cr: 4.2 },
+          { id: 'cg-gemini-3-flash',   vendor: 'Google',    label: 'Gemini 3 Flash — fast, cost-efficient',                     legacy_cr: 1,   new_cr: 1   },
+          { id: 'cg-gemini-2-5-pro',   vendor: 'Google',    label: 'Gemini 2.5 Pro — thinking model for complex problems',      legacy_cr: 3.4, new_cr: 3.4 },
+          { id: 'cg-gemini-2-5-flash', vendor: 'Google',    label: 'Gemini 2.5 Flash — improved multimodal',                    legacy_cr: 1,   new_cr: 1   },
+          { id: 'cg-gemini-2-5-flash-lite', vendor: 'Google', label: 'Gemini 2.5 Flash Lite — high-throughput, cost-efficient', legacy_cr: 1,   new_cr: 1   },
+          { id: 'cg-grok-4-20',        vendor: 'xAI',       label: 'Grok 4.20 Reasoning',                                       legacy_cr: 6,   new_cr: 6   },
+          { id: 'cg-grok-4-1-fast',    vendor: 'xAI',       label: 'Grok 4.1 Fast Reasoning',                                   legacy_cr: 2,   new_cr: 2   },
         ]
-      }
+      },
+      {
+        category: 'AI & Automation', segment: 'Create or Modify Content', catColor: '#7c3aed',
+        hitRate: { low: 0.85, high: 0.98 },
+        providers: [
+          { id: 'cm-gpt-5-4',          vendor: 'OpenAI',    label: 'GPT-5.4 — latest GPT-5, improved reasoning & coding',      legacy_cr: 1,   new_cr: 1   },
+          { id: 'cm-gpt-5-4-mini',     vendor: 'OpenAI',    label: 'GPT-5.4 Mini — faster, cost-efficient',                    legacy_cr: 1,   new_cr: 1   },
+          { id: 'cm-gpt-5-4-nano',     vendor: 'OpenAI',    label: 'GPT-5.4 Nano — fastest, most cost-efficient',              legacy_cr: 0.5, new_cr: 0.5 },
+          { id: 'cm-gpt-5-1',          vendor: 'OpenAI',    label: 'GPT-5.1 — coding & agentic tasks',                         legacy_cr: 2,   new_cr: 2   },
+          { id: 'cm-gpt-5',            vendor: 'OpenAI',    label: 'GPT-5 — previous intelligent coding & agentic model',      legacy_cr: 2,   new_cr: 2   },
+          { id: 'cm-gpt-5-mini',       vendor: 'OpenAI',    label: 'GPT-5 Mini — faster, cost-efficient',                      legacy_cr: 0.4, new_cr: 0.4 },
+          { id: 'cm-gpt-5-nano',       vendor: 'OpenAI',    label: 'GPT-5 Nano — fastest version',                             legacy_cr: 0.2, new_cr: 0.2 },
+          { id: 'cm-o4-mini',          vendor: 'OpenAI',    label: 'o4 Mini — fast reasoning model',                           legacy_cr: 2,   new_cr: 2   },
+          { id: 'cm-o3',               vendor: 'OpenAI',    label: 'o3 — complex reasoning',                                   legacy_cr: 5,   new_cr: 5   },
+          { id: 'cm-gpt-4-1',          vendor: 'OpenAI',    label: 'GPT-4.1 — smartest non-reasoning model',                   legacy_cr: 1,   new_cr: 1   },
+          { id: 'cm-gpt-4-1-mini',     vendor: 'OpenAI',    label: 'GPT-4.1 Mini — smaller, faster',                           legacy_cr: 0.2, new_cr: 0.2 },
+          { id: 'cm-gpt-4-1-nano',     vendor: 'OpenAI',    label: 'GPT-4.1 Nano — fastest version',                           legacy_cr: 0.1, new_cr: 0.1 },
+          { id: 'cm-gpt-4o',           vendor: 'OpenAI',    label: 'GPT-4o — fast, intelligent, flexible',                     legacy_cr: 1,   new_cr: 1   },
+          { id: 'cm-gpt-4o-mini',      vendor: 'OpenAI',    label: 'GPT-4o Mini — fast, affordable',                           legacy_cr: 0.5, new_cr: 0.5 },
+          { id: 'cm-claude-4-6-opus',  vendor: 'Anthropic', label: 'Claude 4.6 Opus — most intelligent, agents & coding',      legacy_cr: 7.5, new_cr: 7.5 },
+          { id: 'cm-claude-4-5-opus',  vendor: 'Anthropic', label: 'Claude 4.5 Opus — most powerful & intelligent',            legacy_cr: 7.5, new_cr: 7.5 },
+          { id: 'cm-claude-4-6-sonnet',vendor: 'Anthropic', label: 'Claude 4.6 Sonnet — improved reasoning & coding',          legacy_cr: 1,   new_cr: 1   },
+          { id: 'cm-claude-4-5-sonnet',vendor: 'Anthropic', label: 'Claude 4.5 Sonnet',                                         legacy_cr: 1.5, new_cr: 1.5 },
+          { id: 'cm-claude-4-5-haiku', vendor: 'Anthropic', label: 'Claude 4.5 Haiku — improved, better instruction following', legacy_cr: 1,   new_cr: 1   },
+          { id: 'cm-gemini-3-1-pro',   vendor: 'Google',    label: 'Gemini 3.1 Pro — complex reasoning & multimodal',          legacy_cr: 3,   new_cr: 3   },
+          { id: 'cm-gemini-3-flash',   vendor: 'Google',    label: 'Gemini 3 Flash — fast, cost-efficient',                    legacy_cr: 0.5, new_cr: 0.5 },
+          { id: 'cm-gemini-2-5-pro',   vendor: 'Google',    label: 'Gemini 2.5 Pro — thinking model for complex problems',     legacy_cr: 3,   new_cr: 3   },
+          { id: 'cm-gemini-2-5-flash-lite', vendor: 'Google', label: 'Gemini 2.5 Flash Lite — high-throughput, cost-efficient', legacy_cr: 0.5, new_cr: 0.5 },
+          { id: 'cm-grok-4-20',        vendor: 'xAI',       label: 'Grok 4.20 Reasoning',                                       legacy_cr: 2.5, new_cr: 2.5 },
+          { id: 'cm-grok-4-1-fast',    vendor: 'xAI',       label: 'Grok 4.1 Fast Reasoning',                                   legacy_cr: 0.5, new_cr: 0.5 },
+          { id: 'cm-deepseek-v3-2',    vendor: 'DeepSeek',  label: 'DeepSeek V3.2 — fast, high-quality text generation',        legacy_cr: 1.5, new_cr: 1.5 },
+        ]
+      },
+      {
+        category: 'AI & Automation', segment: 'Image Generation', catColor: '#7c3aed',
+        hitRate: { low: 0.90, high: 0.98 },
+        providers: [
+          { id: 'ig-gpt-image-1-medium', vendor: 'OpenAI',   label: 'GPT Image 1 Medium (Recommended) — medium quality',     legacy_cr: 10,  new_cr: 10  },
+          { id: 'ig-gpt-image-1-high',   vendor: 'OpenAI',   label: 'GPT Image 1 High — highest quality',                    legacy_cr: 30,  new_cr: 30  },
+          { id: 'ig-imagen-4',           vendor: 'Google',   label: 'Imagen 4 — improved quality & prompt adherence',        legacy_cr: 6,   new_cr: 6   },
+          { id: 'ig-imagen-4-ultra',     vendor: 'Google',   label: 'Imagen 4 Ultra — highest quality, best detail/realism', legacy_cr: 9,   new_cr: 9   },
+          { id: 'ig-imagen-4-fast',      vendor: 'Google',   label: 'Imagen 4 Fast — faster, lower-cost Imagen 4',           legacy_cr: 3,   new_cr: 3   },
+          { id: 'ig-flux-1-schnell',     vendor: 'Flux',     label: 'Flux 1 Schnell — open source, quality/cost balance',    legacy_cr: 1,   new_cr: 1   },
+          { id: 'ig-flux-1-dev',         vendor: 'Flux',     label: 'Flux 1 Dev — open source, quality/cost balance',        legacy_cr: 3,   new_cr: 3   },
+          { id: 'ig-playground-v2-5',    vendor: 'Playground', label: 'Playground V2.5 — open source, quality/cost balance', legacy_cr: 2,   new_cr: 2   },
+          { id: 'ig-playground-v2',      vendor: 'Playground', label: 'Playground V2 — open source, quality/cost balance',   legacy_cr: 2,   new_cr: 2   },
+          { id: 'ig-ssd-1b',             vendor: 'SSD',      label: 'SSD 1B — open source, quality/cost balance',            legacy_cr: 2,   new_cr: 2   },
+          { id: 'ig-sdxl-1024',          vendor: 'Stability AI', label: 'Stable Diffusion XL 1024 — older but solid',        legacy_cr: 2,   new_cr: 2   },
+        ]
+      },
+      {
+        category: 'Clay Waterfalls', segment: 'Clay Waterfalls', catColor: '#0369A1',
+        hitRate: { low: 0.40, high: 0.90 },
+        providers: WATERFALL_PRESETS.map(wf => {
+          const tot = (wf.steps || []).reduce((s,x) => s + (x.cost||0), 0)
+                    || (wf.providers || []).length * 2;  // rough estimate for providers-path
+          return {
+            id: wf.id,
+            vendor: wf.name,
+            label: wf.description,
+            legacy_cr: tot,
+            new_cr: tot,
+            isWaterfall: true,
+            waterfallIcon: wf.icon
+          };
+        })
+      },
     ];
 
     // ============================================================================
     // WATERFALL PRESETS — pre-built enrichment sequences
     // ============================================================================
-    const WATERFALL_PRESETS = [
-      {
-        id: 'wf-work-email', name: 'Work Email Waterfall', icon: '✉️',
-        description: 'Find work emails sequentially — cheapest providers first',
-        segment: 'Work Email',
-        providers: ['enrow-work','icypeas-work','leadmagic-work','hunter-work','datagma-work','apollo-work','prospeo-work','findymail-work','dropcontact-work']
-      },
-      {
-        id: 'wf-personal-email', name: 'Personal Email Waterfall', icon: '📧',
-        description: 'Find personal emails across multiple sources',
-        segment: 'Personal Email',
-        providers: ['modash-personal','mixrank-personal','wiza-personal','lusha-personal','limadata-personal','forager-personal','contactout-personal']
-      },
-      {
-        id: 'wf-mobile-phone', name: 'Mobile Phone Waterfall', icon: '📱',
-        description: 'Find mobile numbers with sequential fallback',
-        segment: 'Phone Numbers',
-        providers: ['leadmagic-phone','upcell-phone','findymail-phone','wiza-phone','lusha-phone','prospeo-phone','rocketreach-phone']
-      },
-      {
-        id: 'wf-email-validation', name: 'Email Validation Waterfall', icon: '✅',
-        description: 'Validate emails through multiple verification services',
-        segment: 'Email Validation',
-        providers: ['debounce-val','enrow-val','icypeas-val','leadmagic-val','findymail-val','zerobounce-val','hunter-val']
-      },
-      {
-        id: 'wf-linkedin', name: 'LinkedIn Profile Waterfall', icon: '👥',
-        description: 'Find LinkedIn profiles from name + company',
-        segment: 'LinkedIn / Profiles',
-        providers: ['icypeas-li','wiza-li','livedata-li','bytemine-li','aviato-li','contactout-li']
-      },
-      {
-        id: 'wf-person-enrich', name: 'Person Enrichment Waterfall', icon: '👤',
-        description: 'Enrich person data across multiple providers',
-        segment: 'Enrich Person',
-        providers: ['cpj-person','datagma-person','apollo-person','dropcontact-per','snov-person','rocketreach-per','pdl-person']
-      },
-      {
-        id: 'wf-company-enrich', name: 'Company Enrichment Waterfall', icon: '🏛️',
-        description: 'Enrich company data with firmographics',
-        segment: 'Enrich Company',
-        providers: ['cpj-company','google-domain','datagma-co','leadmagic-co','apollo-co','pdl-co','clearbit-co']
-      },
-      {
-        id: 'wf-web-traffic', name: 'Web Traffic & Visitor ID Waterfall', icon: '🌐',
-        description: 'Identify website visitors and company traffic',
-        segment: 'Web Traffic & Visitors',
-        providers: ['snitcher-traffic','dealfront-traffic','demandbase-traffic','rb2b-traffic','warmly-traffic']
-      }
-    ];
+    
 
     // ============================================================================
     // ENRICHMENT SUCCESS RATES
@@ -2086,6 +2538,8 @@
       'Ad Intelligence':          { low: 0.40, high: 0.65 },
       'Web Traffic & Visitors':   { low: 0.20, high: 0.50 },
       'Intent & Signals':         { low: 0.15, high: 0.40 },
+      'Clay Signals':             { low: 0.40, high: 0.80 },
+      'Clay Waterfalls':          { low: 0.40, high: 0.90 },
       'Legal & Compliance':       { low: 0.40, high: 0.65 },
       'Web Scraping':             { low: 0.70, high: 0.95 },
       'Search & Location':        { low: 0.80, high: 0.95 },
@@ -2209,8 +2663,86 @@
 
       const recommendations = [];
 
-      // Step 1: Evaluate self-serve plans first (Free, Launch, Growth)
-      ['free_2026', 'launch', 'growth'].forEach(planKey => {
+      // Step 1: Evaluate self-serve plans (mode-aware)
+      const selfServeKeys = ENRICH_PRICING_MODE === 'legacy'
+        ? ['free', 'starter', 'explorer', 'pro']
+        : ['free_2026', 'launch', 'growth'];
+
+      // Legacy plans use single `tiers` array (data-only)
+      if (ENRICH_PRICING_MODE === 'legacy') {
+        selfServeKeys.forEach(planKey => {
+          const plan = PLAN_TIERS[planKey];
+          if (!plan || !plan.tiers) return;
+          plan.tiers.forEach((tier, tIdx) => {
+            if (tier.credits === null) return;
+            const dataFit = tier.credits >= monthlyDataCredits;
+            const dataOverage = roundCr(Math.max(0, monthlyDataCredits - tier.credits));
+            const topupCost = roundCr(dataOverage * (tier.perCredit || 0) * plan.topUpMultiplier);
+            const dataHeadroom = tier.credits > 0 ? Math.round(((tier.credits - monthlyDataCredits) / tier.credits) * 100) : 0;
+            const monthly = tier.monthly || 0;
+            recommendations.push({
+              planKey, planName: plan.name,
+              dataTierIdx: tIdx, dataTierLabel: tier.label,
+              actionTierIdx: 0, actionTierLabel: null,
+              monthly, topupCost,
+              totalMonthlyCost: monthly + topupCost,
+              dataFit, actionFit: true,
+              fullFit: dataFit,
+              dataCredits: tier.credits, actions: null,
+              dataOverage, actionOverage: 0,
+              dataHeadroom, actionHeadroom: null,
+              isLegacyPlan: true
+            });
+          });
+        });
+
+        // Legacy Enterprise fallback when no self-serve tier fits
+        const legacyFullFit = recommendations.some(r => r.fullFit);
+        if (!legacyFullFit && monthlyDataCredits > 200000) {
+          recommendations.push({
+            planKey: 'enterprise', planName: 'Enterprise',
+            dataTierIdx: 0, dataTierLabel: 'Custom — contact sales',
+            actionTierIdx: 0, actionTierLabel: null,
+            monthly: null, topupCost: 0, totalMonthlyCost: null,
+            dataFit: true, actionFit: true, fullFit: true,
+            dataCredits: null, actions: null,
+            dataOverage: 0, actionOverage: 0,
+            dataHeadroom: null, actionHeadroom: null,
+            isLegacyPlan: true, isEnterprise: true
+          });
+        }
+
+        // Sort legacy: full fit first, cheapest
+        recommendations.sort((a, b) => {
+          const aFit = a.fullFit ? 1 : 0;
+          const bFit = b.fullFit ? 1 : 0;
+          if (aFit !== bFit) return bFit - aFit;
+          return (a.totalMonthlyCost || 0) - (b.totalMonthlyCost || 0);
+        });
+
+        return {
+          recommendations: recommendations.slice(0, 3),
+          monthlyDataCredits, monthlyActions,
+          creditsPerRow, actionsPerRow,
+          rawRecords,
+          enrichmentCount: enrichments.length,
+          frequency
+        };
+      }
+
+      // --- 2026 plans path (improved logic, v2) ---
+      // Action top-up heuristic: Clay doesn't publish per-action overage rates for Launch/Growth,
+      // so we approximate using Launch's cheapest tier: $54 / 15,000 actions × 1.3 multiplier
+      // ≈ $0.00468/action. Conservative enough to make action overage visible in cost sorts.
+      const ACTION_TOPUP_PER = 0.00468;
+
+      // Dynamic self-serve ceiling — used to decide whether Enterprise is needed at all
+      const maxSelfServeData = Math.max(0, ...selfServeKeys.flatMap(k =>
+        (PLAN_TIERS[k]?.dataTiers || []).map(t => t.credits || 0)));
+      const maxSelfServeActions = Math.max(0, ...selfServeKeys.flatMap(k =>
+        (PLAN_TIERS[k]?.actionTiers || []).map(t => t.actions || 0)));
+
+      selfServeKeys.forEach(planKey => {
         const plan = PLAN_TIERS[planKey];
         if (!plan.dataTiers || !plan.actionTiers) return;
 
@@ -2223,18 +2755,27 @@
             const monthly = (dataTier.monthly || 0) + (actionTier.monthly || 0);
             const dataOverage = roundCr(Math.max(0, monthlyDataCredits - dataTier.credits));
             const actionOverage = Math.max(0, monthlyActions - actionTier.actions);
-            const topupCost = roundCr(dataOverage * (dataTier.perCredit || 0) * plan.topUpMultiplier);
+            const dataTopup = roundCr(dataOverage * (dataTier.perCredit || 0) * plan.topUpMultiplier);
+            const actionTopup = roundCr(actionOverage * ACTION_TOPUP_PER);
+            const topupCost = dataTopup + actionTopup;
             const dataHeadroom = dataTier.credits > 0 ? Math.round(((dataTier.credits - monthlyDataCredits) / dataTier.credits) * 100) : 0;
             const actionHeadroom = actionTier.actions > 0 ? Math.round(((actionTier.actions - monthlyActions) / actionTier.actions) * 100) : 0;
+
+            // Coverage = fraction of needs actually covered by base tier (0–1).
+            // Used to rank non-fitting plans: higher coverage wins over cheapest.
+            const dataCov   = monthlyDataCredits > 0 ? Math.min(1, dataTier.credits  / monthlyDataCredits) : 1;
+            const actionCov = monthlyActions      > 0 ? Math.min(1, actionTier.actions / monthlyActions)     : 1;
+            const coverage = (dataCov + actionCov) / 2;
 
             recommendations.push({
               planKey, planName: plan.name,
               dataTierIdx: dIdx, dataTierLabel: dataTier.label,
               actionTierIdx: aIdx, actionTierLabel: actionTier.label,
-              monthly, topupCost,
+              monthly, topupCost, dataTopup, actionTopup,
               totalMonthlyCost: monthly + topupCost,
               dataFit, actionFit,
               fullFit: dataFit && actionFit,
+              coverage,
               dataCredits: dataTier.credits,
               actions: actionTier.actions,
               dataOverage, actionOverage,
@@ -2244,33 +2785,24 @@
         });
       });
 
-      // Sort self-serve: full fit first, then by total monthly cost ascending
-      recommendations.sort((a, b) => {
-        if (a.fullFit !== b.fullFit) return b.fullFit - a.fullFit;
-        return a.totalMonthlyCost - b.totalMonthlyCost;
-      });
-
-      // Step 2: Only consider Enterprise for truly high volume
-      // Enterprise is last resort — only when 30K+ records AND self-serve can't cover
+      // Step 2: Enterprise gate is capacity-based (not records-based).
+      // If needs exceed the largest self-serve tier on EITHER axis, surface Enterprise.
       const selfServeFullFit = recommendations.some(r => r.fullFit);
-      const rawRecordsForRec = parseInt(rawRecordsInput.value) || 0;
-      const needsEnterprise = !selfServeFullFit
-        && rawRecordsForRec >= 30000
-        && (monthlyDataCredits > 50000 || monthlyActions > 200000);
+      const exceedsSelfServeCapacity =
+        monthlyDataCredits > maxSelfServeData || monthlyActions > maxSelfServeActions;
+      const needsEnterprise = !selfServeFullFit && exceedsSelfServeCapacity;
 
       if (needsEnterprise) {
         const entPlan = PLAN_TIERS['enterprise_new'];
         if (entPlan?.dataTiers && entPlan?.actionTiers) {
-          // Find the smallest Enterprise tier combo that fits
+          // Enterprise: ONLY surface tiers that fully cover needs. No partial-fit noise here.
           const entRecs = [];
           entPlan.dataTiers.forEach((dataTier, dIdx) => {
             entPlan.actionTiers.forEach((actionTier, aIdx) => {
               if (dataTier.credits === null || actionTier.actions === null) return;
               const dataFit = dataTier.credits >= monthlyDataCredits;
               const actionFit = actionTier.actions >= monthlyActions;
-              if (!dataFit && !actionFit) return; // skip if neither fits
-              const dataOverage = roundCr(Math.max(0, monthlyDataCredits - dataTier.credits));
-              const actionOverage = Math.max(0, monthlyActions - actionTier.actions);
+              if (!dataFit || !actionFit) return; // only full-fit enterprise tiers
               const dataHeadroom = dataTier.credits > 0 ? Math.round(((dataTier.credits - monthlyDataCredits) / dataTier.credits) * 100) : 0;
               const actionHeadroom = actionTier.actions > 0 ? Math.round(((actionTier.actions - monthlyActions) / actionTier.actions) * 100) : 0;
 
@@ -2279,35 +2811,33 @@
                 dataTierIdx: dIdx, dataTierLabel: dataTier.label,
                 actionTierIdx: aIdx, actionTierLabel: actionTier.label,
                 monthly: null, topupCost: 0, totalMonthlyCost: null,
-                dataFit, actionFit,
-                fullFit: dataFit && actionFit,
+                dataFit: true, actionFit: true, fullFit: true,
+                coverage: 1,
                 dataCredits: dataTier.credits,
                 actions: actionTier.actions,
-                dataOverage, actionOverage,
+                dataOverage: 0, actionOverage: 0,
                 dataHeadroom, actionHeadroom
               });
             });
           });
 
-          // Sort enterprise: full fit first, then smallest capacity (closest fit)
-          entRecs.sort((a, b) => {
-            if (a.fullFit !== b.fullFit) return b.fullFit - a.fullFit;
-            return (a.dataCredits + a.actions) - (b.dataCredits + b.actions);
-          });
+          // Prefer smallest enterprise tier that fits (closest match, not over-provisioned)
+          entRecs.sort((a, b) =>
+            ((a.dataCredits || 0) + (a.actions || 0)) -
+            ((b.dataCredits || 0) + (b.actions || 0)));
 
-          // Add best enterprise option(s) after self-serve recommendations
-          const bestEnt = entRecs.slice(0, 2);
-          recommendations.push(...bestEnt);
+          recommendations.push(...entRecs.slice(0, 2));
         }
 
-        // If even enterprise tiers can't cover, add custom fallback
-        const hasAnyFit = recommendations.some(r => r.fullFit);
-        if (!hasAnyFit) {
+        // Custom fallback only when even the largest Enterprise tier doesn't cover
+        const anyEnterpriseFit = recommendations.some(r =>
+          r.planKey === 'enterprise_new' && r.fullFit && r.dataCredits !== null);
+        if (!anyEnterpriseFit) {
           recommendations.push({
             planKey: 'enterprise_new', planName: 'Enterprise (2026)',
             dataTierLabel: 'Custom', actionTierLabel: 'Custom',
             monthly: null, topupCost: 0, totalMonthlyCost: null,
-            dataFit: true, actionFit: true, fullFit: true,
+            dataFit: true, actionFit: true, fullFit: true, coverage: 1,
             dataCredits: null, actions: null,
             dataOverage: 0, actionOverage: 0,
             dataHeadroom: null, actionHeadroom: null,
@@ -2316,24 +2846,27 @@
         }
       }
 
-      // Final sort: self-serve ALWAYS before enterprise
+      // Final unified sort — what actually fits wins, always.
       recommendations.sort((a, b) => {
         const aIsSelfServe = a.totalMonthlyCost !== null;
         const bIsSelfServe = b.totalMonthlyCost !== null;
 
-        // Self-serve always comes first
-        if (aIsSelfServe && !bIsSelfServe) return -1;
-        if (!aIsSelfServe && bIsSelfServe) return 1;
+        // 1) Fitting plans ALWAYS beat non-fitting plans (regardless of self-serve vs enterprise)
+        if (a.fullFit !== b.fullFit) return b.fullFit - a.fullFit;
 
-        // Both self-serve: full fit first, then cheapest
-        if (aIsSelfServe && bIsSelfServe) {
-          if (a.fullFit !== b.fullFit) return b.fullFit - a.fullFit;
-          return a.totalMonthlyCost - b.totalMonthlyCost;
+        // 2) Among fully-fitting plans: prefer self-serve (it has a real price), cheapest first
+        if (a.fullFit && b.fullFit) {
+          if (aIsSelfServe !== bIsSelfServe) return aIsSelfServe ? -1 : 1;
+          if (aIsSelfServe) return a.totalMonthlyCost - b.totalMonthlyCost;
+          // both enterprise: smallest capacity (closest to actual need) first
+          return ((a.dataCredits || 0) + (a.actions || 0)) -
+                 ((b.dataCredits || 0) + (b.actions || 0));
         }
 
-        // Both enterprise: full fit first, then smallest capacity
-        if (a.fullFit !== b.fullFit) return b.fullFit - a.fullFit;
-        return ((a.dataCredits || 0) + (a.actions || 0)) - ((b.dataCredits || 0) + (b.actions || 0));
+        // 3) Neither fits: rank by coverage (get closer to covering), then by total cost
+        const covDelta = (b.coverage || 0) - (a.coverage || 0);
+        if (Math.abs(covDelta) > 0.05) return covDelta;
+        return (a.totalMonthlyCost || Infinity) - (b.totalMonthlyCost || Infinity);
       });
 
       return {
@@ -2406,6 +2939,14 @@
         const card = document.createElement('div');
         card.className = `plan-rec-card ${idx === 0 ? 'recommended' : ''}`;
 
+        // Contextual badge: only call it "Best Match" / "Alternative" when the plan actually fits.
+        // Non-fitting plans are labeled honestly so the user doesn't mistake them for a real match.
+        const badgeLabel = idx === 0
+          ? (rec.fullFit ? 'Best Match' : 'Closest Fit — Over Capacity')
+          : (rec.fullFit
+              ? (idx === 1 ? 'Alternative' : 'Budget Option')
+              : 'Partial Coverage');
+
         if (rec.isEnterprise) {
           card.innerHTML = `
             <div class="plan-rec-badge ${idx === 0 ? 'best' : 'alt'}">${idx === 0 ? 'Recommended' : 'Alternative'}</div>
@@ -2425,17 +2966,19 @@
             ? `$${rec.monthly.toLocaleString()} <span class="plan-rec-period">/mo${rec.topupCost > 0 ? ` + $${Math.round(rec.topupCost).toLocaleString()} top-up` : ''}</span>`
             : `Custom Pricing <span class="plan-rec-period">contact sales</span>`;
 
+          const actionsRow = rec.isLegacyPlan ? '' : `
+              <span>${fmtActions('')} ${rec.actionTierLabel}</span>`;
+          const actionsFitRow = rec.isLegacyPlan ? '' : `
+            <div class="plan-rec-fit ${actionFitClass}">${actionFitIcon} ${fmtActions('')} Actions: ${rec.actions.toLocaleString()}/mo (need ${result.monthlyActions.toLocaleString()})${rec.actionFit ? ` — ${rec.actionHeadroom}% headroom` : ` — ${rec.actionOverage.toLocaleString()} over`}</div>`;
           card.innerHTML = `
-            <div class="plan-rec-badge ${idx === 0 ? 'best' : 'alt'}">${idx === 0 ? 'Best Match' : (idx === 1 ? 'Alternative' : 'Budget Option')}</div>
+            <div class="plan-rec-badge ${idx === 0 ? 'best' : 'alt'}">${badgeLabel}</div>
             <div class="plan-rec-name">${rec.planName}</div>
             <div class="plan-rec-price">${priceHTML}</div>
-            <div class="plan-rec-tiers">
-              <span>${fmtActions('')} ${rec.actionTierLabel}</span>
+            <div class="plan-rec-tiers">${actionsRow}
               <span>${fmtCredits('')} ${rec.dataTierLabel}</span>
-            </div>
-            <div class="plan-rec-fit ${actionFitClass}">${actionFitIcon} ${fmtActions('')} Actions: ${rec.actions.toLocaleString()}/mo (need ${result.monthlyActions.toLocaleString()})${rec.actionFit ? ` — ${rec.actionHeadroom}% headroom` : ` — ${rec.actionOverage.toLocaleString()} over`}</div>
+            </div>${actionsFitRow}
             <div class="plan-rec-fit ${dataFitClass}">${dataFitIcon} ${fmtCredits('')} Data Credits: ${rec.dataCredits.toLocaleString()}/mo (need ${result.monthlyDataCredits.toLocaleString()})${rec.dataFit ? ` — ${rec.dataHeadroom}% headroom` : ` — ${roundCr(rec.dataOverage).toLocaleString()} over`}</div>
-            <button class="plan-rec-select" data-plan="${rec.planKey}" data-data-tier="${rec.dataTierIdx}" data-action-tier="${rec.actionTierIdx}">Select This Plan</button>
+            <button class="plan-rec-select" data-plan="${rec.planKey}" data-data-tier="${rec.dataTierIdx}" data-action-tier="${rec.actionTierIdx}" data-legacy="${rec.isLegacyPlan ? '1' : ''}">Select This Plan</button>
           `;
         }
 
@@ -2454,9 +2997,10 @@
           document.querySelectorAll('#calcModeToggle .calc-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === 'existing'));
           toggleCalcMode();
 
-          // Set plan type to 2026
-          setPlanType('new');
-          syncPipelinePlanTypeToggle('new');
+          // Set plan type based on recommendation mode
+          const isLegacyRec = btn.dataset.legacy === '1';
+          setPlanType(isLegacyRec ? 'legacy' : 'new');
+          syncPipelinePlanTypeToggle(isLegacyRec ? 'legacy' : 'new');
 
           // Select the plan
           planSelect.value = planKey;
@@ -2494,10 +3038,25 @@
         });
       }
 
-      if (rec && rec.isEnterprise) {
+      if (rec && (rec.isEnterprise || rec.planKey === 'enterprise_new')) {
+        // Compute self-serve ceiling dynamically for transparency in the insight text
+        const ssKeys = ENRICH_PRICING_MODE === 'legacy' ? [] : ['launch', 'growth'];
+        const capData = Math.max(0, ...ssKeys.flatMap(k =>
+          (PLAN_TIERS[k]?.dataTiers || []).map(t => t.credits || 0)));
+        const capAct = Math.max(0, ...ssKeys.flatMap(k =>
+          (PLAN_TIERS[k]?.actionTiers || []).map(t => t.actions || 0)));
         insights.push({
           icon: '🏢',
-          text: `Your volume (${fmtCredits(`<strong>${result.monthlyDataCredits.toLocaleString()}</strong>`)} credits/mo, ${fmtActions(`<strong>${result.monthlyActions.toLocaleString()}</strong>`)} actions/mo) exceeds self-serve tiers. Contact Clay sales for a custom Enterprise plan.`
+          text: `Your volume (${fmtCredits(`<strong>${result.monthlyDataCredits.toLocaleString()}</strong>`)} credits/mo, ${fmtActions(`<strong>${result.monthlyActions.toLocaleString()}</strong>`)} actions/mo) exceeds self-serve caps (${fmtCredits('')} ${capData.toLocaleString()} data credits · ${fmtActions('')} ${capAct.toLocaleString()} actions). Contact Clay sales for custom Enterprise pricing.`
+        });
+      } else if (rec && !rec.fullFit) {
+        // Self-serve is the top rec but it doesn't fully cover — be transparent
+        const gap = [];
+        if (!rec.dataFit)   gap.push(`${fmtCredits('')} <strong>${roundCr(rec.dataOverage).toLocaleString()}</strong> data credits short`);
+        if (!rec.actionFit) gap.push(`${fmtActions('')} <strong>${rec.actionOverage.toLocaleString()}</strong> actions short`);
+        insights.push({
+          icon: '⚠️',
+          text: `No self-serve plan fully covers your pipeline. <strong>${rec.planName}</strong> is the closest fit but is ${gap.join(' and ')}. Top-ups are estimated at <strong>$${Math.round(rec.topupCost).toLocaleString()}/mo</strong> — consider contacting Clay for Enterprise if this is ongoing usage.`
         });
       }
 
@@ -2613,15 +3172,19 @@
         setPricingMode('new');
       }
 
-      // Disable/enable options based on plan type
+      // Hide and disable options from the other mode
       const options = planSelect.querySelectorAll('option');
       options.forEach(option => {
+        if (!option.value) return; // keep placeholder
         const isLegacy = option.parentElement && option.parentElement.label && option.parentElement.label.includes('Legacy');
-        if ((planType === 'legacy' && isLegacy) || (planType === 'new' && !isLegacy)) {
-          option.disabled = false;
-        } else {
-          option.disabled = true;
-        }
+        const matches = (planType === 'legacy' && isLegacy) || (planType === 'new' && !isLegacy);
+        option.disabled = !matches;
+        option.hidden = !matches;
+      });
+      // Hide empty optgroups
+      planSelect.querySelectorAll('optgroup').forEach(group => {
+        const isLegacyGroup = group.label && group.label.includes('Legacy');
+        group.hidden = (planType === 'legacy') !== isLegacyGroup;
       });
 
       populateCreditTiers(planSelect.value);
@@ -2753,7 +3316,7 @@
                    aria-label="${p.vendor} — ${p.label}">
             <div class="enrich-dot" style="background:${sec.catColor}">${initials}</div>
             <div class="enrichment-info">
-              <label for="enrich-${p.id}" class="enrichment-label">${p.vendor}</label>
+              <label for="enrich-${p.id}" class="enrichment-label">${p.vendor}${byokBadge(p.vendor)}</label>
               <span class="enrichment-sublabel">${p.label}</span>
             </div>
             <div class="enrich-credits-pair">
@@ -3048,9 +3611,14 @@
           monthsToComplete = enterpriseCredits > 0 && creditsPerRow > 0 ? Math.ceil(totalCredits / enterpriseCredits) : 0;
           totalCostSpread = enterprisePrice * monthsToComplete;
         } else {
+          // Fallback: estimate overage with best legacy Pro tier perCredit (0.006 — Pro 200K tier)
+          const fallbackPerCredit = 0.006;
+          perCredit = fallbackPerCredit;
+          effectivePlanCredits = existingCredits;
+          overage = Math.max(0, monthlyCreditsNeeded - effectivePlanCredits);
+          topupCost = overage * fallbackPerCredit * planData.topUpMultiplier;
+          oneTimeCost = topupCost;
           rowsPerMonth = 'Custom';
-          topupCost = 'Contact';
-          oneTimeCost = 'Contact';
           monthsToComplete = 'Custom';
           totalCostSpread = 'Contact';
         }
@@ -3118,6 +3686,7 @@
       updateResults(creditsPerRow, monthlyCreditsNeeded, rowsPerMonth, topupCost, oneTimeCost, monthsToComplete, effectivePlanCredits, rawRecords, enrichments, frequencyInfo, actionInfo, planMonthly);
       updateGapAlert(monthlyTarget, maxValidWorkEmail, minValidWorkEmail, rawRecords, targetAchievable);
       updateScenarios(rawRecords, creditsPerRow, planMonthly, totalCredits, planCredits, tier, monthlyTarget, perCredit, topUpMultiplier, actionInfo);
+      renderInlinePlanSuggestion({ planKey, planData, monthlyCreditsNeeded, monthlyActions, actionInfo });
       updateInsights(monthlyTarget, targetAchievable, rawRecords, creditsPerRow, tier, overage, enrichments, existingCredits, planCredits, frequencyInfo, totalCredits, oneTimeCost, rowsPerMonth, actionInfo);
 
       // Announce to screen readers
@@ -3136,7 +3705,7 @@
         'Influencers': '⭐',
         'Find Company': '🔎', 'Enrich Company': '🏛️', 'Tech Stack': '🛠️', 'Funding & Investors': '💰',
         'Job Openings': '💼', 'News & Events': '📰', 'Ad Intelligence': '📊',
-        'Web Traffic & Visitors': '🌐', 'Intent & Signals': '🎯',
+        'Web Traffic & Visitors': '🌐', 'Intent & Signals': '🎯', 'Clay Signals': '📡', 'Clay Waterfalls': '🌊',
         'Legal & Compliance': '⚖️',
         'Web Scraping': '🕷️', 'Search & Location': '🗺️',
         'Clay Native AI': '🤖', 'Third-Party AI': '🧠', 'Web Research': '🔍'
@@ -3436,6 +4005,80 @@
           `;
         }
       }
+    }
+
+    function renderInlinePlanSuggestion({ planKey, planData, monthlyCreditsNeeded, monthlyActions, actionInfo }) {
+      const card = document.getElementById('costSummaryCard');
+      if (!card) return;
+      // Clean up any prior suggestion
+      const prior = card.querySelector('#inlinePlanSuggestion');
+      if (prior) prior.remove();
+
+      const isLegacyMode = planData?.planMode === 'legacy';
+      const keys = isLegacyMode
+        ? ['free', 'starter', 'explorer', 'pro']
+        : ['free_2026', 'launch', 'growth'];
+
+      let best = null;
+      keys.forEach(k => {
+        const p = PLAN_TIERS[k];
+        if (!p) return;
+        if (isLegacyMode) {
+          p.tiers?.forEach((t, idx) => {
+            if (t.credits === null) return;
+            if (t.credits < monthlyCreditsNeeded) return;
+            const cost = (t.monthly || 0);
+            if (!best || cost < best.cost) best = { planKey: k, planName: p.name, tierLabel: t.label, cost, dataTierIdx: idx };
+          });
+        } else {
+          p.dataTiers?.forEach((dt, dIdx) => {
+            p.actionTiers?.forEach((at, aIdx) => {
+              if (dt.credits === null || at.actions === null) return;
+              if (dt.credits < monthlyCreditsNeeded) return;
+              if (at.actions < (monthlyActions || 0)) return;
+              const cost = (dt.monthly || 0) + (at.monthly || 0);
+              if (!best || cost < best.cost) best = { planKey: k, planName: p.name, tierLabel: dt.label + ' + ' + at.label, cost, dataTierIdx: dIdx, actionTierIdx: aIdx };
+            });
+          });
+        }
+      });
+
+      // If nothing covers it, suggest Enterprise
+      if (!best) {
+        best = {
+          planKey: isLegacyMode ? 'enterprise' : 'enterprise_new',
+          planName: isLegacyMode ? 'Enterprise (Custom)' : 'Enterprise 2026 (Custom)',
+          tierLabel: 'Custom — contact sales',
+          cost: null,
+          dataTierIdx: 0, actionTierIdx: 0
+        };
+      }
+
+      // Don't suggest the same plan the user already has
+      if (best.planKey === planKey) return;
+
+      const banner = document.createElement('div');
+      banner.id = 'inlinePlanSuggestion';
+      banner.style.cssText = 'margin-top:1rem;padding:0.9rem 1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;';
+      const costText = best.cost !== null ? '$' + best.cost.toLocaleString() + '/mo' : 'Contact sales';
+      banner.innerHTML = '<div style="flex:1;min-width:200px;">' +
+        '<div style="font-weight:700;color:#0369a1;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.2rem;">Recommended Plan</div>' +
+        '<div style="font-weight:600;color:#0c4a6e;">' + best.planName + ' — ' + costText + '</div>' +
+        '<div style="font-size:0.75rem;color:#075985;">' + best.tierLabel + '</div>' +
+        '</div>' +
+        '<button type="button" id="inlinePlanSuggestBtn" style="background:#0369a1;color:#fff;border:none;padding:0.55rem 1rem;border-radius:8px;font-weight:600;cursor:pointer;font-size:0.8rem;">Switch to this plan</button>';
+      card.appendChild(banner);
+
+      banner.querySelector('#inlinePlanSuggestBtn').addEventListener('click', () => {
+        setPlanType(isLegacyMode ? 'legacy' : 'new');
+        syncPipelinePlanTypeToggle(isLegacyMode ? 'legacy' : 'new');
+        planSelect.value = best.planKey;
+        populateCreditTiers(best.planKey);
+        creditTierSelect.value = best.dataTierIdx;
+        const actionSel = document.getElementById('actionTierSelect');
+        if (actionSel && best.actionTierIdx !== undefined) actionSel.value = best.actionTierIdx;
+        calculate();
+      });
     }
 
     function updateScenarios(rawRecords, creditsPerRow, planMonthly, totalCredits, planCredits, tier, monthlyTarget, perCredit, topUpMultiplier, actionInfo) {
@@ -3770,6 +4413,8 @@
       if (legacyIdx >= 0 && legacyIdx < legacyOrder.length - 1) {
         return legacyOrder[legacyIdx + 1].toLowerCase();
       }
+      // Legacy Enterprise has no next tier — suggest 2026 Enterprise
+      if (currentPlanName === 'Enterprise') return 'enterprise_new';
 
       // 2026 plan upgrade path
       const newOrder = { 'Free (2026)': 'launch', 'Launch': 'growth', 'Growth': 'enterprise_new' };
@@ -4329,6 +4974,23 @@
     }
 
     function pbToggle(provider) {
+      // Waterfall-tile click: delegate to waterfall add/remove and sync activeWaterfallIds
+      if (provider && provider.isWaterfall) {
+        const wf = WATERFALL_PRESETS.find(w => w.id === provider.id);
+        if (!wf) return;
+        if (activeWaterfallIds.has(wf.id)) {
+          activeWaterfallIds.delete(wf.id);
+          removeWaterfallFromPipeline(wf);
+        } else {
+          activeWaterfallIds.add(wf.id);
+          addWaterfallToPipeline(wf);
+        }
+        if (typeof renderWaterfallTabs === 'function') renderWaterfallTabs();
+        pbRenderSegmentContent();
+        pbRenderPipeline();
+        pbUpdateCredits();
+        return;
+      }
       const idx = pbState.pipeline.findIndex(p => p.id === provider.id);
       if (idx >= 0) {
         pbState.pipeline.splice(idx, 1);
@@ -4369,14 +5031,15 @@
       if (!container) return;
       container.innerHTML = '';
 
-      WATERFALL_PRESETS.forEach(wf => {
+      const TOP_WATERFALL_IDS = ['wf-work-email','wf-mobile-phone','wf-find-people'];
+      WATERFALL_PRESETS.filter(wf => TOP_WATERFALL_IDS.includes(wf.id)).forEach(wf => {
         const isSelected = activeWaterfallIds.has(wf.id);
         const btn = document.createElement('button');
         btn.className = `pb-waterfall-btn ${isSelected ? 'active' : ''}`;
         btn.innerHTML = `
           <span class="wf-icon">${wf.icon}</span>
           <span class="wf-name">${wf.name}</span>
-          <span class="wf-steps">${wf.providers.length} steps</span>
+          <span class="wf-steps">${(wf.providers || wf.steps || []).length} steps</span>
         `;
         btn.addEventListener('click', () => {
           if (isSelected) {
@@ -4457,7 +5120,7 @@
         item.innerHTML = `
           <span class="wf-step-num">${idx + 1}</span>
           <img class="wf-detail-logo" src="${logoSrc}" alt="${providerData.vendor}" loading="lazy" onerror="this.style.display='none'">
-          <span class="wf-detail-name">${providerData.vendor}</span>
+          <span class="wf-detail-name">${providerData.vendor}${byokBadge(providerData.vendor)}</span>
           <span class="wf-detail-costs">${costHTML}</span>
         `;
         container.appendChild(item);
@@ -4545,7 +5208,7 @@
               <img src="${logoSrc}" alt="${p.vendor}" style="width:100%; height:100%; object-fit:contain; padding:4px;" loading="lazy" onerror="this.style.display='none'">
             </div>
             <div class="enrichment-info">
-              <div class="enrichment-label">${p.vendor}</div>
+              <div class="enrichment-label">${p.vendor}${byokBadge(p.vendor)}</div>
               <div class="enrichment-sublabel">${p.label}</div>
             </div>
             <span class="enrichment-credit">${costHTML}</span>
@@ -4567,6 +5230,30 @@
     }
 
     function addWaterfallToPipeline(wf) {
+      // Inline-steps path — for waterfalls whose providers aren't in ENRICHMENT_SEGMENTS
+      if (Array.isArray(wf.steps) && wf.steps.length) {
+        wf.steps.forEach((step, i) => {
+          const stepId = `${wf.id}-step-${i}-${(step.vendor||'x').toLowerCase().replace(/[^a-z0-9]+/g,'-')}`;
+          if (pbState.pipeline.find(p => p.id === stepId)) return;
+          const legacy = step.legacy_cr ?? step.cost ?? 0;
+          const nw = step.new_cr ?? step.cost ?? 0;
+          pbState.pipeline.push({
+            id: stepId,
+            vendor: step.vendor,
+            name: step.vendor,
+            label: step.label || step.vendor,
+            legacy_cr: legacy,
+            new_cr: nw,
+            cost: ENRICH_PRICING_MODE === 'legacy' ? legacy : nw,
+            segment: wf.segment,
+            catColor: '#0369A1',
+            waterfallId: wf.id,
+            waterfallName: wf.name,
+            actionCost: 0
+          });
+        });
+        return;
+      }
       // Append providers tagged with waterfallId (skip duplicates)
       wf.providers.forEach(providerId => {
         if (pbState.pipeline.find(p => p.id === providerId)) return;
@@ -4593,9 +5280,7 @@
     }
 
     function removeWaterfallFromPipeline(wf) {
-      // Remove only this waterfall's providers (leave others intact)
-      const idsToRemove = new Set(wf.providers);
-      pbState.pipeline = pbState.pipeline.filter(p => !idsToRemove.has(p.id));
+      pbState.pipeline = pbState.pipeline.filter(p => p.waterfallId !== wf.id);
     }
 
     function pbRenderSecondarySection(categoryName) {
@@ -4824,7 +5509,7 @@
         'Influencers': '⭐',
         'Find Company': '🔎', 'Enrich Company': '🏛️', 'Tech Stack': '🛠️', 'Funding & Investors': '💰',
         'Job Openings': '💼', 'News & Events': '📰', 'Ad Intelligence': '📊',
-        'Web Traffic & Visitors': '🌐', 'Intent & Signals': '🎯',
+        'Web Traffic & Visitors': '🌐', 'Intent & Signals': '🎯', 'Clay Signals': '📡', 'Clay Waterfalls': '🌊',
         'Legal & Compliance': '⚖️',
         'Web Scraping': '🕷️', 'Search & Location': '🗺️',
         'Clay Native AI': '🤖', 'Third-Party AI': '🧠', 'Web Research': '🔍'
@@ -4847,8 +5532,28 @@
         }
       });
 
-      // Sort cheapest first based on active pricing mode
-      categoryProviders.sort((a, b) => a.cost - b.cost);
+      // Sort cheapest first based on active pricing mode (except Clay Waterfalls — custom order)
+      if (categoryName === 'Clay Waterfalls') {
+        const priority = ['wf-work-email','wf-mobile-phone','wf-find-people'];
+        categoryProviders.sort((a, b) => {
+          const ap = priority.indexOf(a.id);
+          const bp = priority.indexOf(b.id);
+          if (ap !== -1 || bp !== -1) return (ap === -1 ? 99 : ap) - (bp === -1 ? 99 : bp);
+          return a.vendor.localeCompare(b.vendor);
+        });
+      } else if (categoryName === 'AI & Automation') {
+        const segOrder = ENRICHMENT_SEGMENTS
+          .filter(s => s.category === 'AI & Automation')
+          .map(s => s.segment);
+        categoryProviders.sort((a, b) => {
+          const sa = segOrder.indexOf(a.segment);
+          const sb = segOrder.indexOf(b.segment);
+          if (sa !== sb) return sa - sb;
+          return a.cost - b.cost;
+        });
+      } else {
+        categoryProviders.sort((a, b) => a.cost - b.cost);
+      }
 
       console.log('[renderEnrichment] Found providers:', categoryProviders.length);
 
@@ -4867,9 +5572,32 @@
       }
 
       let rendered = 0;
+      let lastRenderedSegment = null;
+      let currentGroupItems = null;
+      // Persist collapse state across re-renders (per-category)
+      window._aiGroupCollapsed = window._aiGroupCollapsed || {};
       // Render as grid of tiles
       categoryProviders.forEach(p => {
         if (query && !searchMatch(p.vendor, query) && !searchMatch(p.label, query) && !searchMatch(p.segment, query)) return;
+        if (categoryName === 'AI & Automation' && p.segment !== lastRenderedSegment) {
+          const isCollapsed = !!window._aiGroupCollapsed[p.segment];
+          const sgHeader = document.createElement('div');
+          sgHeader.className = 'pb-segment-group-header' + (isCollapsed ? ' collapsed' : '');
+          sgHeader.style.background = p.catColor || '#7c3aed';
+          sgHeader.innerHTML = '<span>' + p.segment + '</span><span class="sg-chevron">▼</span>';
+          const sgItems = document.createElement('div');
+          sgItems.className = 'pb-segment-group-items' + (isCollapsed ? ' collapsed' : '');
+          sgHeader.addEventListener('click', () => {
+            const nowCollapsed = !sgHeader.classList.contains('collapsed');
+            sgHeader.classList.toggle('collapsed', nowCollapsed);
+            sgItems.classList.toggle('collapsed', nowCollapsed);
+            window._aiGroupCollapsed[p.segment] = nowCollapsed;
+          });
+          container.appendChild(sgHeader);
+          container.appendChild(sgItems);
+          currentGroupItems = sgItems;
+          lastRenderedSegment = p.segment;
+        }
 
         const isSelected = pbState.pipeline.find(item => item.id === p.id);
         const item = document.createElement('div');
@@ -4885,6 +5613,33 @@
         dotDiv.style.alignItems = 'center';
         dotDiv.style.justifyContent = 'center';
         dotDiv.style.overflow = 'hidden';
+
+        // Waterfall tile: render emoji instead of logo img
+        if (p.isWaterfall) {
+          dotDiv.style.backgroundColor = '#0369A1';
+          dotDiv.style.color = 'white';
+          dotDiv.style.fontSize = '22px';
+          dotDiv.textContent = p.waterfallIcon || '🌊';
+          const infoDiv2 = document.createElement('div');
+          infoDiv2.className = 'enrichment-info';
+          infoDiv2.innerHTML = `
+            <div class="enrichment-label">${p.vendor}${byokBadge(p.vendor)}</div>
+            <div class="enrichment-sublabel">${p.label}</div>
+          `;
+          const creditBadge2 = document.createElement('span');
+          creditBadge2.className = 'enrichment-credit';
+          creditBadge2.innerHTML = fmtProviderCost({ ...p, actionCost: 1 });
+          item.appendChild(dotDiv);
+          item.appendChild(infoDiv2);
+          item.appendChild(creditBadge2);
+          item.addEventListener('click', () => {
+            pbToggle(p);
+            renderEnrichmentCategoryProviders(categoryName);
+          });
+          (categoryName === 'AI & Automation' && currentGroupItems ? currentGroupItems : container).appendChild(item);
+          rendered++;
+          return;
+        }
 
         // Create image element with proper fallback chain
         const img = document.createElement('img');
@@ -4925,7 +5680,7 @@
         const infoDiv = document.createElement('div');
         infoDiv.className = 'enrichment-info';
         infoDiv.innerHTML = `
-          <div class="enrichment-label">${p.vendor}</div>
+          <div class="enrichment-label">${p.vendor}${byokBadge(p.vendor)}</div>
           <div class="enrichment-sublabel">${p.label}</div>
         `;
 
@@ -4943,7 +5698,7 @@
           renderEnrichmentCategoryProviders(categoryName);
         });
 
-        container.appendChild(item);
+        (categoryName === 'AI & Automation' && currentGroupItems ? currentGroupItems : container).appendChild(item);
         rendered++;
       });
 
@@ -4970,7 +5725,7 @@
         'Influencers': '⭐',
         'Find Company': '🔎', 'Enrich Company': '🏛️', 'Tech Stack': '🛠️', 'Funding & Investors': '💰',
         'Job Openings': '💼', 'News & Events': '📰', 'Ad Intelligence': '📊',
-        'Web Traffic & Visitors': '🌐', 'Intent & Signals': '🎯',
+        'Web Traffic & Visitors': '🌐', 'Intent & Signals': '🎯', 'Clay Signals': '📡', 'Clay Waterfalls': '🌊',
         'Legal & Compliance': '⚖️',
         'Web Scraping': '🕷️', 'Search & Location': '🗺️',
         'Clay Native AI': '🤖', 'Third-Party AI': '🧠', 'Web Research': '🔍'
@@ -5009,7 +5764,7 @@
 
             const stepsBadge = document.createElement('span');
             stepsBadge.className = 'enrichment-credit';
-            stepsBadge.textContent = `${wf.providers.length} steps`;
+            stepsBadge.textContent = `${(wf.providers || wf.steps || []).length} steps`;
 
             wfItem.appendChild(dotDiv);
             wfItem.appendChild(infoDiv);
@@ -5132,7 +5887,7 @@
           const infoDiv = document.createElement('div');
           infoDiv.className = 'enrichment-info';
           infoDiv.innerHTML = `
-            <div class="enrichment-label">${p.vendor}</div>
+            <div class="enrichment-label">${p.vendor}${byokBadge(p.vendor)}</div>
             <div class="enrichment-sublabel">${p.label}</div>
           `;
 
@@ -5313,6 +6068,8 @@
         'Ad Intelligence': '#dc2626',
         'Web Traffic & Visitors': '#d97706',
         'Intent & Signals': '#dc2626',
+        'Clay Signals': '#0ea5e9',
+        'Clay Waterfalls': '#0369a1',
         'Legal & Compliance': '#991b1b',
         // Web Scraping & Intelligence enrichments
         'Web Scraping': '#1e40af',
@@ -5473,7 +6230,7 @@
             // Check if any waterfall lost all its providers — deselect it
             for (const wfId of [...activeWaterfallIds]) {
               const wf = WATERFALL_PRESETS.find(w => w.id === wfId);
-              if (wf && !wf.providers.some(pid => pbState.pipeline.find(p => p.id === pid))) {
+              if (wf && !(wf.providers || []).some(pid => pbState.pipeline.find(p => p.id === pid)) && !(wf.steps || []).length) {
                 activeWaterfallIds.delete(wfId);
               }
             }
@@ -5527,9 +6284,18 @@
         actionsLine.style.display = 'block';
         noActionsLine.style.display = 'none';
         const breakdownText = breakdown.waterfallCount > 0
-          ? ` (${breakdown.waterfallCount} waterfall${breakdown.waterfallCount > 1 ? 's' : ''}${breakdown.individualCount > 0 ? ` + ${breakdown.individualCount} individual` : ''})`
+          ? `${breakdown.waterfallCount} waterfall${breakdown.waterfallCount > 1 ? 's' : ''}${breakdown.individualCount > 0 ? ` + ${breakdown.individualCount} individual` : ''}`
           : '';
-        document.getElementById('pbActionsValue').textContent = actionTotal.toLocaleString() + breakdownText;
+        document.getElementById('pbActionsValue').textContent = actionTotal.toLocaleString();
+        let bdEl = document.getElementById('pbActionsBreakdown');
+        if (!bdEl) {
+          bdEl = document.createElement('div');
+          bdEl.id = 'pbActionsBreakdown';
+          bdEl.style.cssText = 'font-size:0.65rem; color:#9ca3af; font-weight:500; margin-top:2px; text-align:center; white-space:normal; word-break:break-word;';
+          actionsLine.appendChild(bdEl);
+        }
+        bdEl.textContent = breakdownText;
+        bdEl.style.display = breakdownText ? 'block' : 'none';
         creditsLabel.innerHTML = hasWaterfalls ? `Avg. ${fmtCredits('')} Data Credits / Row` : `Est. ${fmtCredits('')} Data Credits / Row`;
       } else if (ENRICH_PRICING_MODE === 'new') {
         actionsLine.style.display = 'none';
