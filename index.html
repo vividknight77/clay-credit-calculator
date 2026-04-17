@@ -1681,7 +1681,13 @@
           { label: '6,000 cr/mo (72K/yr)',   credits: 6000,   monthly: 261,  perCredit: 0.0435 },
           { label: '10,000 cr/mo (120K/yr)', credits: 10000,  monthly: 414,  perCredit: 0.0414 },
           { label: '20,000 cr/mo (240K/yr)', credits: 20000,  monthly: 792,  perCredit: 0.0396 },
-          { label: '50,000 cr/mo (600K/yr)', credits: 50000,  monthly: 1913, perCredit: 0.0383 },
+          // Top-up add-ons confirmed by Clay support 2026-04-17 for 600K annual tier:
+          //   "12,500, 25,000, or 37,500 credits as add-ons, starting at $622"
+          //   $622 / 12,500 = $0.04976/cr ≈ $0.0383 × 1.3 (matches the 30% one-time markup rule).
+          //   Effective annual ceiling including top-ups: ~1.2M cr/yr (100K cr/mo monthly-equivalent)
+          //   before Enterprise becomes mandatory.
+          { label: '50,000 cr/mo (600K/yr)', credits: 50000,  monthly: 1913, perCredit: 0.0383,
+            topupPackages: [12500, 25000, 37500], maxMonthlyWithTopup: 100000 },
         ]
       },
       growth: {
@@ -1696,7 +1702,8 @@
           { label: '6,000 cr/mo (72K/yr)',   credits: 6000,   monthly: 261,  perCredit: 0.0435 },
           { label: '10,000 cr/mo (120K/yr)', credits: 10000,  monthly: 413,  perCredit: 0.0413 },
           { label: '20,000 cr/mo (240K/yr)', credits: 20000,  monthly: 792,  perCredit: 0.0396 },
-          { label: '50,000 cr/mo (600K/yr)', credits: 50000,  monthly: 1913, perCredit: 0.0383 },
+          { label: '50,000 cr/mo (600K/yr)', credits: 50000,  monthly: 1913, perCredit: 0.0383,
+            topupPackages: [12500, 25000, 37500], maxMonthlyWithTopup: 100000 },
         ]
       },
       enterprise_new: {
@@ -1737,6 +1744,62 @@
     function roundCr(n) {
       if (typeof n !== 'number') return n;
       return parseFloat(n.toFixed(1));
+    }
+
+    // ── TOP-UP PACKAGE MATH ──
+    // Clay sells overage credits in fixed packages, not arbitrary amounts.
+    // Confirmed 2026-04-17 for the 600K tier: 12,500 / 25,000 / 37,500 packages at
+    // the one-time rate (≈ 30% over recurring). Input:
+    //   overage     — monthly credits over the tier's recurring allotment
+    //   dataTier    — the tier object (has .topupPackages, .perCredit)
+    //   multiplier  — plan.topUpMultiplier (the "30% markup")
+    // Returns { creditsBought, cost, counts }. Falls back to continuous estimate
+    // when a tier doesn't have packages defined (smaller tiers — not yet confirmed).
+    function computeTopupPlan(overage, dataTier, multiplier) {
+      overage = Math.max(0, overage || 0);
+      if (overage === 0) return { creditsBought: 0, cost: 0, counts: {}, discrete: false };
+
+      const perCreditTopup = (dataTier.perCredit || 0) * (multiplier || 1);
+
+      // No package data → continuous estimate (treat every credit as billable at top-up rate)
+      if (!Array.isArray(dataTier.topupPackages) || dataTier.topupPackages.length === 0) {
+        return {
+          creditsBought: overage,
+          cost: roundCr(overage * perCreditTopup),
+          counts: {},
+          discrete: false
+        };
+      }
+
+      // Discrete packages. Round overage UP to the nearest combination, greedy largest-first
+      // (all combos summing to the same credit total cost the same at a linear per-credit rate).
+      const sorted = [...dataTier.topupPackages].sort((a, b) => b - a);
+      const step = sorted[sorted.length - 1];  // smallest package — the rounding unit
+      const creditsBought = Math.ceil(overage / step) * step;
+
+      const counts = {};
+      let remaining = creditsBought;
+      for (const size of sorted) {
+        const n = Math.floor(remaining / size);
+        if (n > 0) { counts[size] = n; remaining -= n * size; }
+      }
+      // remaining should be 0 by construction
+
+      return {
+        creditsBought,
+        cost: roundCr(creditsBought * perCreditTopup),
+        counts,
+        discrete: true
+      };
+    }
+
+    // Render package counts as a readable string: "2× 37,500 + 1× 12,500 packages"
+    function formatPackageCounts(counts) {
+      const entries = Object.entries(counts)
+        .map(([size, n]) => ({ size: Number(size), n }))
+        .sort((a, b) => b.size - a.size);
+      if (entries.length === 0) return '';
+      return entries.map(e => `${e.n}× ${e.size.toLocaleString()}`).join(' + ') + ' cr packages';
     }
 
     // ── WATERFALL-AWARE CREDIT CALCULATIONS ──
@@ -2755,11 +2818,21 @@
             const monthly = (dataTier.monthly || 0) + (actionTier.monthly || 0);
             const dataOverage = roundCr(Math.max(0, monthlyDataCredits - dataTier.credits));
             const actionOverage = Math.max(0, monthlyActions - actionTier.actions);
-            const dataTopup = roundCr(dataOverage * (dataTier.perCredit || 0) * plan.topUpMultiplier);
+
+            // Discrete package math for data top-up — respects Clay's fixed 12.5K/25K/37.5K packages
+            const topupPlan = computeTopupPlan(dataOverage, dataTier, plan.topUpMultiplier);
+            const dataTopup = topupPlan.cost;
             const actionTopup = roundCr(actionOverage * ACTION_TOPUP_PER);
             const topupCost = dataTopup + actionTopup;
+
             const dataHeadroom = dataTier.credits > 0 ? Math.round(((dataTier.credits - monthlyDataCredits) / dataTier.credits) * 100) : 0;
             const actionHeadroom = actionTier.actions > 0 ? Math.round(((actionTier.actions - monthlyActions) / actionTier.actions) * 100) : 0;
+
+            // Annual cap: if the tier caps out even WITH max top-up, self-serve can't
+            // realistically handle this need — Enterprise is the only legitimate answer.
+            // (Only enforced when the tier explicitly declares its cap.)
+            const monthlyCeiling = dataTier.maxMonthlyWithTopup || null;
+            const exceedsAnnualCap = monthlyCeiling !== null && monthlyDataCredits > monthlyCeiling;
 
             // Coverage = fraction of needs actually covered by base tier (0–1).
             // Used to rank non-fitting plans: higher coverage wins over cheapest.
@@ -2779,18 +2852,33 @@
               dataCredits: dataTier.credits,
               actions: actionTier.actions,
               dataOverage, actionOverage,
-              dataHeadroom, actionHeadroom
+              dataHeadroom, actionHeadroom,
+              // New: carry package info and annual-cap flag
+              topupPlan,
+              monthlyCeiling,
+              exceedsAnnualCap
             });
           });
         });
       });
 
-      // Step 2: Enterprise gate is capacity-based (not records-based).
-      // If needs exceed the largest self-serve tier on EITHER axis, surface Enterprise.
+      // Step 2: Enterprise gate is capacity-aware, top-up aware.
+      // Fire Enterprise ONLY when top-up packages can't save the user. Triggers:
+      //   a) Action need exceeds the largest action tier (no action top-up packages exist)
+      //   b) Data need exceeds the top tier's ANNUAL-CAP monthly ceiling — e.g. >100K cr/mo
+      //      on the 600K Growth/Launch tier (1.2M/yr hard cap WITH max top-ups, per Clay
+      //      support 2026-04-17). Below the cap, users can buy top-up packages and stay
+      //      on self-serve — don't force them to Enterprise.
       const selfServeFullFit = recommendations.some(r => r.fullFit);
-      const exceedsSelfServeCapacity =
-        monthlyDataCredits > maxSelfServeData || monthlyActions > maxSelfServeActions;
-      const needsEnterprise = !selfServeFullFit && exceedsSelfServeCapacity;
+      const exceedsActionCapacity = monthlyActions > maxSelfServeActions;
+      // Largest data ceiling across any self-serve tier with a declared cap
+      const maxMonthlyCeiling = Math.max(0, ...selfServeKeys.flatMap(k =>
+        (PLAN_TIERS[k]?.dataTiers || [])
+          .map(t => t.maxMonthlyWithTopup || 0)));
+      // If no cap is declared anywhere, fall back to base-tier cap (legacy behaviour)
+      const effectiveDataCeiling = maxMonthlyCeiling > 0 ? maxMonthlyCeiling : maxSelfServeData;
+      const exceedsDataCeiling = monthlyDataCredits > effectiveDataCeiling;
+      const needsEnterprise = !selfServeFullFit && (exceedsActionCapacity || exceedsDataCeiling);
 
       if (needsEnterprise) {
         const entPlan = PLAN_TIERS['enterprise_new'];
@@ -2966,6 +3054,24 @@
             ? `$${rec.monthly.toLocaleString()} <span class="plan-rec-period">/mo${rec.topupCost > 0 ? ` + $${Math.round(rec.topupCost).toLocaleString()} top-up` : ''}</span>`
             : `Custom Pricing <span class="plan-rec-period">contact sales</span>`;
 
+          // Top-up package breakdown — only when the tier has discrete packages defined
+          // and the user actually needs top-ups
+          const tp = rec.topupPlan;
+          const topupBreakdownRow = (tp && tp.discrete && tp.creditsBought > 0) ? `
+            <div class="plan-rec-fit tight" style="font-size:0.85em;">
+              📦 Top-up packages: <strong>${formatPackageCounts(tp.counts)}</strong>
+              = ${tp.creditsBought.toLocaleString()} cr/mo @ $${Math.round(tp.cost).toLocaleString()}
+              <span style="opacity:0.7;">(need ${roundCr(rec.dataOverage).toLocaleString()} over · rounded up to package size)</span>
+            </div>` : '';
+
+          // Annual-cap warning — plan technically has packages to cover overage but
+          // the need exceeds Clay's annual cap even with max top-ups
+          const annualCapRow = rec.exceedsAnnualCap ? `
+            <div class="plan-rec-fit over" style="font-size:0.85em;">
+              ⛔ Exceeds plan's <strong>${rec.monthlyCeiling.toLocaleString()} cr/mo annual cap</strong>
+              (${(rec.monthlyCeiling * 12 / 1000).toFixed(0)}K/yr incl. max top-ups) — Enterprise required.
+            </div>` : '';
+
           const actionsRow = rec.isLegacyPlan ? '' : `
               <span>${fmtActions('')} ${rec.actionTierLabel}</span>`;
           const actionsFitRow = rec.isLegacyPlan ? '' : `
@@ -2977,7 +3083,7 @@
             <div class="plan-rec-tiers">${actionsRow}
               <span>${fmtCredits('')} ${rec.dataTierLabel}</span>
             </div>${actionsFitRow}
-            <div class="plan-rec-fit ${dataFitClass}">${dataFitIcon} ${fmtCredits('')} Data Credits: ${rec.dataCredits.toLocaleString()}/mo (need ${result.monthlyDataCredits.toLocaleString()})${rec.dataFit ? ` — ${rec.dataHeadroom}% headroom` : ` — ${roundCr(rec.dataOverage).toLocaleString()} over`}</div>
+            <div class="plan-rec-fit ${dataFitClass}">${dataFitIcon} ${fmtCredits('')} Data Credits: ${rec.dataCredits.toLocaleString()}/mo (need ${result.monthlyDataCredits.toLocaleString()})${rec.dataFit ? ` — ${rec.dataHeadroom}% headroom` : ` — ${roundCr(rec.dataOverage).toLocaleString()} over`}</div>${topupBreakdownRow}${annualCapRow}
             <button class="plan-rec-select" data-plan="${rec.planKey}" data-data-tier="${rec.dataTierIdx}" data-action-tier="${rec.actionTierIdx}" data-legacy="${rec.isLegacyPlan ? '1' : ''}">Select This Plan</button>
           `;
         }
@@ -3054,9 +3160,12 @@
         const gap = [];
         if (!rec.dataFit)   gap.push(`${fmtCredits('')} <strong>${roundCr(rec.dataOverage).toLocaleString()}</strong> data credits short`);
         if (!rec.actionFit) gap.push(`${fmtActions('')} <strong>${rec.actionOverage.toLocaleString()}</strong> actions short`);
+        const pkgDetail = (rec.topupPlan && rec.topupPlan.discrete && rec.topupPlan.creditsBought > 0)
+          ? ` (buy ${formatPackageCounts(rec.topupPlan.counts)} — ${rec.topupPlan.creditsBought.toLocaleString()} cr rounded up)`
+          : '';
         insights.push({
           icon: '⚠️',
-          text: `No self-serve plan fully covers your pipeline. <strong>${rec.planName}</strong> is the closest fit but is ${gap.join(' and ')}. Top-ups are estimated at <strong>$${Math.round(rec.topupCost).toLocaleString()}/mo</strong> — consider contacting Clay for Enterprise if this is ongoing usage.`
+          text: `No self-serve plan fully covers your pipeline. <strong>${rec.planName}</strong> is the closest fit but is ${gap.join(' and ')}. Top-ups are estimated at <strong>$${Math.round(rec.topupCost).toLocaleString()}/mo</strong>${pkgDetail} — consider contacting Clay for Enterprise if this is ongoing usage.`
         });
       }
 
