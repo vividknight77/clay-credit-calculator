@@ -1743,7 +1743,7 @@
     // Round credits to avoid floating point display issues (e.g. 0.35000000000000003 → 0.35)
     function roundCr(n) {
       if (typeof n !== 'number') return n;
-      return parseFloat(n.toFixed(1));
+      return parseFloat(n.toFixed(2));
     }
 
     // ── TOP-UP PACKAGE MATH ──
@@ -3889,7 +3889,8 @@
       // Compare monthly needs vs monthly capacity
       let rowsPerMonth = effectivePlanCredits > 0 && creditsPerRow > 0 ? Math.floor(effectivePlanCredits / creditsPerRow) : 0;
       let overage = Math.max(0, monthlyCreditsNeeded - effectivePlanCredits);
-      let topupCost = overage * perCredit * topUpMultiplier;
+      let topupResult = (isNewPlan && tier) ? computeTopupPlan(overage, tier, topUpMultiplier) : null;
+      let topupCost = topupResult ? topupResult.cost : overage * perCredit * topUpMultiplier;
       let oneTimeCost = planMonthly + topupCost;
       let monthsToComplete = creditsPerRow > 0 && planCredits > 0 ? Math.ceil(totalCredits / planCredits) : 0;
       let totalCostSpread = planMonthly * monthsToComplete;
@@ -4046,7 +4047,7 @@
           enrichments.push({
             name: providerInfo.vendor + ' — ' + providerInfo.label,
             cost: cost,
-            actions: 1,
+            actions: providerInfo.actionCost !== undefined ? providerInfo.actionCost : 1,
             waterfallId: item.waterfallId || null,
             key: segToKey[providerInfo.segment] || providerInfo.segment,
             id: item.id,
@@ -4420,9 +4421,9 @@
       scenarioGrid.appendChild(scenarioA);
 
       // Scenario B: Spread over months
-      const monthsNeeded = creditsPerRow > 0 ? Math.ceil(totalCredits / planCredits) : 0;
+      const monthsNeeded = (creditsPerRow > 0 && planCredits > 0) ? Math.ceil(totalCredits / planCredits) : 0;
       const costB = planMonthly * monthsNeeded;
-      const monthlyOverage = creditsPerRow > 0 ? Math.max(0, (totalCredits / monthsNeeded) - planCredits) : 0;
+      const monthlyOverage = (creditsPerRow > 0 && monthsNeeded > 0) ? Math.max(0, (totalCredits / monthsNeeded) - planCredits) : 0;
       const monthlyTopupCostB = monthlyOverage * perCredit * topUpMultiplier;
       const avgMonthlyCostB = (planMonthly + monthlyTopupCostB);
       const scenarioB = document.createElement('div');
@@ -5018,7 +5019,7 @@
           { id: 'champify', name: 'Champify', cost: 1, icon: '🏆', tags: ['social'] },
           { id: 'buska', name: 'Buska', cost: 1, icon: '👂', tags: ['social'] },
           { id: 'lagrowth', name: 'LaGrowthMachine', cost: 2, icon: '📈', tags: ['social'] },
-          { id: 'twitter', name: 'Twitter/X', cost: 1, icon: '𝕏', tags: ['social'] },
+          { id: 'twitter-social', name: 'Twitter/X', cost: 1, icon: '𝕏', tags: ['social'] },
         ],
       },
       'Company Data': {
@@ -5131,27 +5132,27 @@
       },
       'Exports & Sync': {
         'CRM Exports': [
-          { id: 'export-hubspot', name: 'HubSpot Export', cost: 0, icon: '📤', tags: ['export', 'crm'] },
-          { id: 'export-salesforce', name: 'Salesforce Export', cost: 0, icon: '📤', tags: ['export', 'crm'] },
-          { id: 'export-pipedrive', name: 'Pipedrive Export', cost: 0, icon: '📤', tags: ['export', 'crm'] },
-          { id: 'export-close', name: 'Close Export', cost: 0, icon: '📤', tags: ['export', 'crm'] },
-          { id: 'export-attio', name: 'Attio Export', cost: 0, icon: '📤', tags: ['export', 'crm'] },
+          { id: 'export-hubspot', name: 'HubSpot Export', cost: 0, actionCost: 0, icon: '📤', tags: ['export', 'crm'] },
+          { id: 'export-salesforce', name: 'Salesforce Export', cost: 0, actionCost: 0, icon: '📤', tags: ['export', 'crm'] },
+          { id: 'export-pipedrive', name: 'Pipedrive Export', cost: 0, actionCost: 0, icon: '📤', tags: ['export', 'crm'] },
+          { id: 'export-close', name: 'Close Export', cost: 0, actionCost: 0, icon: '📤', tags: ['export', 'crm'] },
+          { id: 'export-attio', name: 'Attio Export', cost: 0, actionCost: 0, icon: '📤', tags: ['export', 'crm'] },
         ],
         'Data Warehouse Exports': [
-          { id: 'export-snowflake', name: 'Snowflake Export', cost: 0, icon: '🏔️', tags: ['export', 'warehouse'] },
-          { id: 'export-bigquery', name: 'BigQuery Export', cost: 0, icon: '📊', tags: ['export', 'warehouse'] },
-          { id: 'export-redshift', name: 'Redshift Export', cost: 0, icon: '📦', tags: ['export', 'warehouse'] },
+          { id: 'export-snowflake', name: 'Snowflake Export', cost: 0, actionCost: 0, icon: '🏔️', tags: ['export', 'warehouse'] },
+          { id: 'export-bigquery', name: 'BigQuery Export', cost: 0, actionCost: 0, icon: '📊', tags: ['export', 'warehouse'] },
+          { id: 'export-redshift', name: 'Redshift Export', cost: 0, actionCost: 0, icon: '📦', tags: ['export', 'warehouse'] },
         ],
         'Ads & Audience Exports': [
-          { id: 'export-linkedin-ads', name: 'LinkedIn Ads Audience', cost: 0, icon: '📢', tags: ['export', 'ads'] },
-          { id: 'export-facebook-ads', name: 'Facebook Ads Audience', cost: 0, icon: '📢', tags: ['export', 'ads'] },
-          { id: 'export-google-ads', name: 'Google Ads Audience', cost: 0, icon: '📢', tags: ['export', 'ads'] },
+          { id: 'export-linkedin-ads', name: 'LinkedIn Ads Audience', cost: 0, actionCost: 0, icon: '📢', tags: ['export', 'ads'] },
+          { id: 'export-facebook-ads', name: 'Facebook Ads Audience', cost: 0, actionCost: 0, icon: '📢', tags: ['export', 'ads'] },
+          { id: 'export-google-ads', name: 'Google Ads Audience', cost: 0, actionCost: 0, icon: '📢', tags: ['export', 'ads'] },
         ],
         'Other Exports': [
-          { id: 'export-webhook', name: 'Webhook', cost: 0, icon: '🔗', tags: ['export', 'webhook'] },
-          { id: 'export-http-api', name: 'HTTP API', cost: 0, icon: '🔗', tags: ['export', 'api'] },
+          { id: 'export-webhook', name: 'Webhook', cost: 0, actionCost: 0, icon: '🔗', tags: ['export', 'webhook'] },
+          { id: 'export-http-api', name: 'HTTP API', cost: 0, actionCost: 0, icon: '🔗', tags: ['export', 'api'] },
           { id: 'export-csv', name: 'CSV Export', cost: 0, actionCost: 0, icon: '📄', tags: ['export', 'csv'] },
-          { id: 'export-google-sheets', name: 'Google Sheets Export', cost: 0, icon: '📊', tags: ['export', 'sheets'] },
+          { id: 'export-google-sheets', name: 'Google Sheets Export', cost: 0, actionCost: 0, icon: '📊', tags: ['export', 'sheets'] },
         ],
       },
     };
