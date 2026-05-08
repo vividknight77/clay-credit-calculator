@@ -4397,7 +4397,8 @@
 
       // Scenario A: One-time batch with full overage
       const overageCreditsA = Math.max(0, totalCredits - planCredits);
-      const topupCostA = overageCreditsA * perCredit * topUpMultiplier;
+      const topupResultA = (actionInfo?.isNewPlan && tier) ? computeTopupPlan(overageCreditsA, tier, topUpMultiplier) : null;
+      const topupCostA = topupResultA ? topupResultA.cost : overageCreditsA * perCredit * topUpMultiplier;
       const costA = planMonthly + topupCostA;
       const scenarioA = document.createElement('div');
       scenarioA.className = 'scenario-card';
@@ -4424,7 +4425,8 @@
       const monthsNeeded = (creditsPerRow > 0 && planCredits > 0) ? Math.ceil(totalCredits / planCredits) : 0;
       const costB = planMonthly * monthsNeeded;
       const monthlyOverage = (creditsPerRow > 0 && monthsNeeded > 0) ? Math.max(0, (totalCredits / monthsNeeded) - planCredits) : 0;
-      const monthlyTopupCostB = monthlyOverage * perCredit * topUpMultiplier;
+      const topupResultB = (actionInfo?.isNewPlan && tier) ? computeTopupPlan(monthlyOverage, tier, topUpMultiplier) : null;
+      const monthlyTopupCostB = topupResultB ? topupResultB.cost : monthlyOverage * perCredit * topUpMultiplier;
       const avgMonthlyCostB = (planMonthly + monthlyTopupCostB);
       const scenarioB = document.createElement('div');
       scenarioB.className = 'scenario-card recommended';
@@ -5004,7 +5006,7 @@
           { id: 'clearout', name: 'ClearoutPhone', cost: 4, icon: '📞', tags: ['phone', 'api'] },
           { id: 'cognism-phone', name: 'Cognism', cost: 13, icon: '🔐', tags: ['phone', 'api'] },
           { id: 'bettercontact-phone', name: 'BetterContact (Phone)', cost: 10, icon: '👥', tags: ['phone', 'api'] },
-          { id: 'zeliq-phone', name: 'Zeliq (Phone)', cost: 8, icon: '🌊', tags: ['phone', 'api'] },
+          { id: 'zeliq-phone-api', name: 'Zeliq (Phone)', cost: 8, icon: '🌊', tags: ['phone', 'api'] },
           { id: 'oceanus', name: 'Oceanus', cost: 5, icon: '🌊', tags: ['phone', 'api'] },
         ],
       },
